@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AFP Schemas</title>
+    <script>(function(){var t;try{t=localStorage.getItem('os-theme')}catch(e){}if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)})()</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Public+Sans:ital,wght@0,400;0,600;1,400&amp;family=Source+Serif+4:opsz,wght@8..60,600&amp;display=swap">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" href="../favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="../favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="../favicon-16.png">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+</head>
+<body class="os" data-protocol="afp">
+    <div class="os-family">
+        <div class="os-wrap">
+            <p class="os-family__title label">ZK protocol family</p>
+            <ul class="os-family__list">
+                <li><a class="os-family__link small" href="https://zka.dev" target="_blank" rel="noopener"><span class="os-mark os-mark--zka" aria-hidden="true"></span>ZKA</a></li>
+                <li><a class="os-family__link small" href="https://zkc.dev" target="_blank" rel="noopener"><span class="os-mark os-mark--zkc" aria-hidden="true"></span>ZKC</a></li>
+                <li><a class="os-family__link small" href="https://zkm.dev" target="_blank" rel="noopener"><span class="os-mark os-mark--zkm" aria-hidden="true"></span>ZKM</a></li>
+                <li><a class="os-family__link small" href="../" aria-current="page"><span class="os-mark os-mark--afp" aria-hidden="true"></span>AFP</a></li>
+                <li><button class="os-btn os-btn--small os-theme" type="button">Light / Dark</button></li>
+            </ul>
+        </div>
+    </div>
+
+    <header class="os-header">
+        <div class="os-wrap">
+            <a class="os-brand" href="../">
+                <span class="os-mark" aria-hidden="true"></span>
+                <span class="os-brand__name">AFP</span>
+                <span class="os-brand__long small">Agent Federation Protocol</span>
+            </a>
+            <nav class="os-nav" aria-label="Primary">
+                <a class="small" href="../spec/">Specification</a>
+                <a class="small" aria-current="page" href="../schema/">Schemas</a>
+                <a class="small" href="../faq/">FAQ</a>
+                <a class="small" href="../llms.txt">For AI Agents</a>
+                <a class="os-btn os-btn--small" href="https://github.com/pyramidal-io/AFP" target="_blank" rel="noopener">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="os-main">
+        <section class="os-pagehead">
+            <div class="os-wrap">
+                <a class="os-pagehead__back small" href="../">&larr; Back to AFP</a>
+                <h1 class="title">AFP Wire Artifacts</h1>
+                <p class="lede">
+                    The native credential-only session carrier is specified by <code>afp:credential-envelope:v1</code> (§12.7.2), with the machine-readable shape at <code>schemas/afp-credential-envelope-v1.schema.json</code> in the AFP source distribution. ZKC owns the presentation and authenticated proof request inside it.
+                    AFP v0.3.14-draft does not publish active schemas for the retired v0.2 agent manifest,
+                    discovery, task delegation, or HTTP bridge surfaces.
+                </p>
+                <p class="body">
+                    Current wire artifacts are specified normatively in the AFP specification:
+                    <code>afp:witness-bootstrap:v1</code>, <code>afp:rotation-presentation:v1</code>,
+                    <code>afp:telemetry-sample-binding:v1</code>, <code>afp:zkc-presentation-context:v2</code>,
+                    <code>afp:mixnet-directory:v1</code>,
+                    <code>afp:session:v1</code>, <code>afp:envelope:v1</code>,
+                    <code>afp:payment-quote:v1</code>, <code>afp:payment-receipt:v1</code>,
+                    <code>afp:payment-policy:v2</code>, <code>afp:payment-quote:v2</code>,
+                    <code>afp:payment-receipt:v2</code>, and profile descriptors.
+                    The current presentation context maps its SHA-256/JCS digest to one canonical nonzero BN254 scalar;
+                    it is not an arbitrary 32-byte digest on the proof wire.
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="os-footer">
+        <div class="os-wrap">
+            <ul class="os-footer__family">
+                <li>
+                    <a class="os-footer__proto" href="https://zka.dev" target="_blank" rel="noopener">
+                        <span class="os-mark os-mark--zka" aria-hidden="true"></span>
+                        <b>ZKA</b>
+                        <span class="small">Zero-Knowledge Agents</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="os-footer__proto" href="https://zkc.dev" target="_blank" rel="noopener">
+                        <span class="os-mark os-mark--zkc" aria-hidden="true"></span>
+                        <b>ZKC</b>
+                        <span class="small">Zero-Knowledge Compliance</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="os-footer__proto" href="https://zkm.dev" target="_blank" rel="noopener">
+                        <span class="os-mark os-mark--zkm" aria-hidden="true"></span>
+                        <b>ZKM</b>
+                        <span class="small">Zero-Knowledge Mandates</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="os-footer__proto" href="../" aria-current="page">
+                        <span class="os-mark os-mark--afp" aria-hidden="true"></span>
+                        <b>AFP</b>
+                        <span class="small">Agent Federation Protocol</span>
+                    </a>
+                </li>
+            </ul>
+            <div class="os-footer__meta small">
+                <p>AFP is part of the <a href="https://pyramidal.io" target="_blank" rel="noopener">Pyramidal</a> ZK protocol family</p>
+                <ul class="os-footer__links">
+                    <li><a href="https://github.com/pyramidal-io/AFP" target="_blank" rel="noopener">GitHub</a></li>
+                    <li><a href="../spec/">Specification</a></li>
+                    <li><a href="../schema/">Schemas</a></li>
+                    <li><a href="../faq/">FAQ</a></li>
+                    <li><a href="../llms.txt">For AI Agents</a></li>
+                </ul>
+            </div>
+            <p class="os-footer__note small">Verifiable, metadata-private federation between tenants. Released under the <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache License 2.0</a>.</p>
+        </div>
+    </footer>
+
+    <script>document.addEventListener('click',function(e){var b=e.target.closest('.os-theme');if(!b)return;var h=document.documentElement,t=h.getAttribute('data-theme')==='dark'?'light':'dark';h.setAttribute('data-theme',t);try{localStorage.setItem('os-theme',t)}catch(x){}})</script>
+</body>
+</html>

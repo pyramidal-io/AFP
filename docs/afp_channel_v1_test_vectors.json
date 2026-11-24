@@ -1,0 +1,82 @@
+{
+  "format": "afp:sealed:v1:test-vectors",
+  "version": 1,
+  "status": "synthetic-reference-fixture",
+  "warning": "All material is deterministic, synthetic test-only input. It is not a production seed, KEL, identity, tenant, session, credential, routing value, or ciphertext.",
+  "wire": {
+    "kind": "afp:sealed:v1",
+    "suite": "afp:x25519-sha256ctr-hmacsha256:v1",
+    "header_hex": "6166703a7365616c65643a763100",
+    "overhead_bytes": 76,
+    "fields": [
+      "kind_utf8_nul",
+      "suite_u8",
+      "direction_u8",
+      "sequence_u64_be",
+      "nonce_16_bytes",
+      "ciphertext_length_u32_be",
+      "ciphertext",
+      "tag_32_bytes"
+    ],
+    "associated_data": "external and authenticated; it is never serialized in a sealed frame"
+  },
+  "vectors": [
+    {
+      "id": "afp_sealed_v1_synthetic_bilateral_kat",
+      "warning": "The explicit ephemeral scalars and generation salts below exist solely to make this reference KAT reproducible. A conforming endpoint draws both from a CSPRNG for every establishment, never derives them from M', and never transmits the scalar.",
+      "initiator": {
+        "ephemeral_scalar_hex": "3d594e2bb6118b9b31efa23a939e0a4923a1ead93f1576cc496a468939c26a3e",
+        "generation_salt_hex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+      },
+      "responder": {
+        "ephemeral_scalar_hex": "1625365faaac2439ebd7d93efa0077f0ce78fb4adbd5e8f6e7939a3534351cc9",
+        "generation_salt_hex": "0f0e0d0c0b0a09080706050403020100ffeeddccbbaa99887766554433221100"
+      },
+      "session": {
+        "kind": "afp:session:v1",
+        "id": "sess-channel-kat",
+        "initiator": {
+          "tenant_aid": "E_initiator_tenant",
+          "entity_aid": "E_initiator_entity",
+          "kel_event_dig": "D_3333333333333333333333333333333333333333333333333333333333333333",
+          "signature": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "responder": {
+          "tenant_aid": "E_responder_tenant",
+          "entity_aid": "E_responder_entity",
+          "kel_event_dig": "D_4444444444444444444444444444444444444444444444444444444444444444",
+          "signature": "11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "agreement_ref": "agr-channel-kat",
+        "agreement_version": "1",
+        "profile": "work",
+        "profile_policy_hash": "H_synthetic",
+        "status": "open",
+        "opened_at": 1700000000,
+        "expires_at": "2023-11-14T23:13:20Z",
+        "session_context": "X_8abeff478280ca628800c4cc8aba285797e3550bc8d4bbabe39aee9a08d18d60"
+      },
+      "plaintext_hex": "0001026166703a7365616c65643a763100",
+      "message_class": "afp.work.result",
+      "expected": {
+        "initiator_public_key_hex": "3b99d52a6b7641a68006f8fd5b15f216cc1223e92dc179f32fb50983aac34927",
+        "responder_public_key_hex": "a93bd7abfc79564bc9269f4ef1d4f3d8cd5a6ab6238daa08a582b04735d4b022",
+        "x25519_result_hex": "350fa6c3d37194e623b5df3099a340f925ca2bb05889b8dd5a5771b7b2c1a513",
+        "transcript_sha256_hex": "ea3842e8376b36c19c8d310f955c1954d0510f8bb566407085ff1e88dff41723",
+        "directional_keys_hex": {
+          "i2r_cipher": "a92d60d588e0ac8537eb2f9f3e404e82c1c3752e1b3391882f384311d1ff2882",
+          "i2r_mac": "cada05833f97f3218225b8ed3abc86ec38369106930260d65a757af7a1fe0731",
+          "i2r_nonce": "a760b4e086cd7e49df6b7c54b41b3725349e718a733bc4f0ddab7d19fcc4aa28",
+          "r2i_cipher": "9b2c24930e7dfa7e15a9a68921a0c5a9e9db3dae2735f18cc20474a6b468232f",
+          "r2i_mac": "6e1812d63e1d6e8eec31b322d8361dec52fff5f2611ede9d27285d3c90f17fb3",
+          "r2i_nonce": "350aed7439ccb2b24fda7be8fd710615f4bdc3382eeb41cf18ca1b820bbb53c3"
+        },
+        "nonce_hex": "fc7a8f1928056616939908d5a3237a00",
+        "associated_data_sha256_hex": "37b6df5b30d126a3bce971373c43709167d1fd15b61584f8789646fd7c049ea6",
+        "ciphertext_hex": "b157594333b15e1b9c40ac3b90bf525ddb",
+        "tag_hex": "7e5110d86e07171f74042d864048d357f1621aebd73d9c384c9c307717f9b338",
+        "frame_hex": "6166703a7365616c65643a76310001000000000000000000fc7a8f1928056616939908d5a3237a0000000011b157594333b15e1b9c40ac3b90bf525ddb7e5110d86e07171f74042d864048d357f1621aebd73d9c384c9c307717f9b338"
+      }
+    }
+  ]
+}

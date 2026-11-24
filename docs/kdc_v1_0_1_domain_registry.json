@@ -1,0 +1,49 @@
+{
+  "module": "Key Derivation Core",
+  "kdc_version": "1.0.1",
+  "published_by": "AFP",
+  "published_on": "2026-08-04",
+  "compatibility": "all-v1.0.0-and-deployed-operational-values-retained",
+  "field_tag_algorithm": "LEInteger(Blake2b-512(UTF8(\"ZKA-Domain-\") || UTF8(tag))) mod BN254.Fr",
+  "fixed_byte_tag_algorithm": "require 1-32 UTF-8 bytes with a non-zero first byte, then left-zero-pad to 32 bytes; no field reduction",
+  "registry_scope": "KDC-owned derivation tags plus tagged ZKA, ZKC, and ZKM operational field constants current on 2026-08-04",
+  "untagged_compatibility_constants": [
+    {
+      "owner": "ZKC",
+      "names": ["DOMAIN_ZKC_AGGREGATION_SEED", "DOMAIN_ZKC_AGGREGATION_VERIFY"],
+      "rule": "Frozen legacy literal constants are not string tags and are therefore outside this tag registry. A tagged replacement requires a versioned circuit and VK migration; implementations MUST NOT reinterpret the literals through the field-tag algorithm."
+    }
+  ],
+  "tags": [
+    {"tag": "zka/spending", "owner": "KDC", "class": "derivation", "field_hex": "0x14046af3b2a955bb4c450d1b53ffc2798acc3c2924c3519cf923146b775acc67"},
+    {"tag": "zka/viewing", "owner": "KDC", "class": "derivation", "field_hex": "0x041a8f7dfa88f8b20fd899a83e0bce075c65856e12e7706113f0b326a9b13eff"},
+    {"tag": "zka/proof", "owner": "KDC", "class": "derivation", "field_hex": "0x193befdd9db847abcc0c6412a4044f4ce9b378786241eab30fbb50b9faaad2d7"},
+    {"tag": "zka/address", "owner": "KDC", "class": "derivation", "field_hex": "0x001b916d980f2edf145af8615825a58890f9ff48dc7c0fa92ed14fe0cd5e5fb8"},
+    {"tag": "zkc/credential", "owner": "KDC", "class": "derivation", "field_hex": "0x3010b194aeae94550e7a48d065d9dc931108c2d15136704bf4ad78eae07f0e26"},
+    {"tag": "zkc/binding", "owner": "KDC", "class": "derivation", "field_hex": "0x12b8b6de2c8fc6b63102155d15c31799845a1f360ab0df6266284bde48e3a93f"},
+
+    {"tag": "zka/nullifier", "owner": "ZKA", "class": "operational", "field_hex": "0x2e03b47965736082429061ee83eba139ece5ee1c8f30983b4d5a54ac8e18c1eb"},
+    {"tag": "zka/note", "owner": "ZKA", "class": "operational", "field_hex": "0x09a4260bf4256607461da644a2ee12d3e78c2aafb37427a010b4f3c7e021a72e"},
+    {"tag": "zka/asset", "owner": "ZKA", "class": "operational", "field_hex": "0x078574d1857e778c075008cf155293bda6a75e7146a12a32692271782baf7d30"},
+    {"tag": "zka/commitment", "owner": "ZKA", "class": "operational", "field_hex": "0x0d574a2db0485ef65bee07d885fc5874f66989c7f56a1b6750fac9fcfb5d11c9"},
+
+    {"tag": "zkc/claim", "owner": "ZKC", "class": "operational", "field_hex": "0x0b929496a58d5a41cba03a3302b92f5d7781ad2913285aec7a5431647c50c9d4"},
+    {"tag": "zkc/context", "owner": "ZKC", "class": "operational", "field_hex": "0x215e018458623e55aad0c8f295d2a81f32969c3d5a73379f2c48c17741e19117"},
+    {"tag": "zkc/purpose", "owner": "ZKC", "class": "operational", "field_hex": "0x2efb6bb9f75d0391d484733fada7a178b0f1b29a4e48b6e9672c0ebe3de16f17"},
+    {"tag": "zkc/apr", "owner": "ZKC", "class": "operational", "field_hex": "0x19acbf96f3eaea4d208d50c90aa1ad9e583942c84ff4d8b5ac62b697e0950c3c"},
+    {"tag": "zkc/receipt", "owner": "ZKC", "class": "operational", "field_hex": "0x125c2e5494b527e4e895a11c3802fabc9235adc22263e44a754c1e2e18638b12"},
+    {"tag": "zkc/presentation-scope:v1", "owner": "ZKC", "class": "operational", "field_hex": "0x2f7a94a38bb647d343fc7abc74b6466fe1eb566d71c185cc9537b7e768c466ae"},
+    {"tag": "zkc/scope:v1", "owner": "ZKC", "class": "operational", "field_hex": "0x1c13e7e880b812ceb034a7c8fe48b3cd9a518882ef7609b603e8a0db1c2cf817"},
+    {"tag": "zkc/verifier-id:v1", "owner": "ZKC", "class": "operational", "field_hex": "0x10e11268c72c7b6cf64a0e9e71423f21e8bb294ec386eda6f3b3e3abdf0d0357"},
+
+    {"tag": "zkm/mandate_commitment/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x2b9b00feea6c9acfdfbd933453a7be3e4980badd8beb7848e28992009b74f67c"},
+    {"tag": "zkm/mandate_nullifier/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x01a0ffaffcb4824255c8db4d91656683e68cae424489fb79d76f7083fedfe053"},
+    {"tag": "zkm/mandate_nullifier_key/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x13434dd24dcadc2621268e80ba4628bc0d9f8154e5f272a99de4257c9ee9eafd"},
+    {"tag": "zkm/mandate_root_id/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x0e8b2c7f9831b5cbaaddbe7b8a98cb3d6f0e570b825df5a0ed18ff82b6a29295"},
+    {"tag": "zkm/holder_key/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x12106df0c6acc17eab4e42f1f0509aeaeeaacd580cbee77327869a0fffe0ab52"},
+    {"tag": "zkm/issuance_key/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x13ea79880b4f13adef0c45c92fbf65b495034c93646ac078cb076bff4afa8998"},
+    {"tag": "zkm/control_attestation/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x2ada2ea2f52b310f53244b1b43a4227881a39cbb648f74aa7ad202588ae76301"},
+    {"tag": "zkm/disclosure_binding/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x0b5325387de003d1f3d1d3c85995e287af94e7bc9a3463bc93b60605a345ec9d"},
+    {"tag": "zkm/policy/v1", "owner": "ZKM", "class": "operational", "field_hex": "0x21924384b009ec6f6d4fa4058a6282081978d6e026ee2ac3d720470ab2e0ba06"}
+  ]
+}

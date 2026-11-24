@@ -1,0 +1,5 @@
+[package]
+name = "poseidon"
+type = "lib"
+authors = ["Aztec Labs", "AFP Protocol"]
+description = "Reviewed Poseidon2 source vendored from noir-lang/poseidon commit f249446e6e01f7b607ad35351cebe0cc20068cb7"

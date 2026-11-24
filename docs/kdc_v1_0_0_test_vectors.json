@@ -1,0 +1,62 @@
+{
+  "module": "Key Derivation Core",
+  "kdc_version": "1.0.0",
+  "published_by": "AFP",
+  "published_on": "2026-06-10",
+  "vectors": {
+    "entity_subseed_hkdf_sha256": {
+      "spec_section": "AFP Appendix A.5",
+      "algorithm": "HKDF-SHA256",
+      "ikm": "tenant_master_seed",
+      "salt_tag": "kdc/entity-subseed",
+      "salt_hex": "0x00000000000000000000000000006b64632f656e746974792d73756273656564",
+      "info_format": "utf8(\"entity/\" || name)",
+      "output_length_bytes": 32,
+      "cases": [
+        {
+          "id": "kdc_entity_subseed_zero_viksana",
+          "tenant_master_seed_hex": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "entity_name": "viksana",
+          "info_hex": "0x656e746974792f76696b73616e61",
+          "entity_subseed_hex": "0xb23e1e44b0ad8f5e9592462026520a5105a2a62930405403e9c2f61db62f3076"
+        },
+        {
+          "id": "kdc_entity_subseed_sequence_alochana",
+          "tenant_master_seed_hex": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+          "entity_name": "alochana",
+          "info_hex": "0x656e746974792f616c6f6368616e61",
+          "entity_subseed_hex": "0x1c6a8695232401548cf61f41fef14f1917222b2f00bc28ae20ebd78649ffe8fa"
+        },
+        {
+          "id": "kdc_entity_subseed_reverse_drasta",
+          "tenant_master_seed_hex": "0xfffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0",
+          "entity_name": "drasta",
+          "info_hex": "0x656e746974792f647261737461",
+          "entity_subseed_hex": "0x3e88c32ab5d24ba6e2f832321ea3bc7b3410d724d34a8e336ced092363a31e3b"
+        },
+        {
+          "id": "kdc_entity_subseed_pattern_entity01",
+          "tenant_master_seed_hex": "0x0123456789abcdeffedcba987654321000112233445566778899aabbccddeeff",
+          "entity_name": "entity-01",
+          "info_hex": "0x656e746974792f656e746974792d3031",
+          "entity_subseed_hex": "0x7a1dcac655a1a104bfb41beed7918fa7b5fa111928df3522875a63c3ca3508e6"
+        }
+      ]
+    },
+    "seed_to_key_hierarchy": {
+      "spec_section": "AFP Appendix A.6",
+      "normative_source": "ZKA tests/vectors/crypto/key_derivation.json",
+      "behavioral_identity_requirement": "KDC v1.0.0 must reproduce the existing ZKA v0.5.0/v0.6.0 seed-to-key-hierarchy vectors exactly.",
+      "verification": {
+        "verified_on": "2026-06-10",
+        "implementation": "ZKA reference implementation",
+        "command": "cargo test --test vector_validation test_key_derivation_vectors",
+        "working_directory": "src/zka-crypto",
+        "result": "passed",
+        "passed_tests": [
+          "test_key_derivation_vectors"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# Exact public-only files in this snapshot.
+.github/scripts/check-public-dependencies.py
+.github/scripts/check-public-license-inventory.py
+.github/scripts/check-public-provenance.py
+.github/scripts/check-public-surface.sh
+.github/scripts/check-release-changelog.py
+.github/workflows/ci.yml
+.gitleaks.toml
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE_INVENTORY.json
+PUBLIC_SURFACE
+README.md
+SECURITY.md
+docs/public-snapshot-provenance.md
+protocol-family/README.md

@@ -1,0 +1,135 @@
+# Agent Federation Protocol (AFP)
+
+> Verifiable, metadata-private federation between tenants: bilateral tenant-to-tenant work exchange, operator health verified by ZKC proof rather than observed, and KERI-based identity continuity across operators and deployment topologies.
+
+**Version:** 0.3.14-draft
+**Status:** Draft Specification
+**License:** Apache 2.0
+**Normative documents:** the AFP specification set that `docs/afp_specification.md` §11 lists: `docs/afp_specification.md` (core), `docs/afp_routing_specification.md`, `docs/afp_introduction_profile.md` and `docs/kdc_specification.md`
+
+## What AFP Is
+
+AFP is the protocol layer for verifiable, metadata-private interaction between tenants.
+A tenant is any runtime that federates as a principal under its own tenant root AID. Every tenant
+must satisfy the AFP tenant conformance profile; a shortfall makes it a non-conforming tenant,
+not a non-principal. ADAMAS is the reference implementation, not the definition.
+It is not a marketplace, agent registry, public capability-discovery feed, task broker, or HTTP bridge.
+
+An AFP endpoint is a conforming tenant. The two sides may run different platforms,
+implementations, and product releases when they implement a mutually compatible, pinned AFP
+interface/profile/substrate tuple; unknown, unmatched, or ambiguous tuples fail closed. Neither
+side is required to use any particular vendor. ADAMAS is AFP's reference implementation and
+appears in the specification as an example, never as a conformance condition.
+
+AFP defines exactly three relationships:
+
+1. **Tenant to tenant** - two conforming tenants coordinate work across organizational lines.
+2. **Tenant to operator** - the operator verifies platform health with ZKC proofs, not raw telemetry.
+3. **Identity continuity** - a tenant's identity survives topology and operator migration.
+
+## Trust Level
+
+There is exactly one trust level: *verified conforming instance under a verifier-accepted
+attestation authority* (spec §1.2, §6.3.1). There is no trust ladder and no portable score.
+An organizational attestation root authority is the accountable party behind an attestation,
+not a product; product-scoped signing may be delegated and anchored in the authority's KEL.
+The hardware and transparency-log classes keep their own identifier meanings. The set of
+authorities is open: any organization may stand as one on identical terms by publishing trust
+material a verifier can accept — no registration, grant, registry, or spec amendment. Which
+(root class, root authority) pairs a party accepts, and whether it requires instance attestation
+at all, is that party's own policy. Pyramidal Inc. is named non-normatively as the first such
+authority for the ADAMAS product line and is not yet operational.
+If a party's policy does not require instance attestation, the interaction makes no
+instance-attestation claim and remains permitted on the §12.1 trust basis it actually uses. A
+pre-existing §5.5 agreement is one such basis and may require no instance attestation at all;
+the tenant remains a principal, and acceptance remains the counterparty's policy (§1.5.1,
+§6.3.1, §12.1).
+
+## Current Substrate
+
+- **AFP native credential carriage** - `afp:credential-envelope:v1` carries a native ZKC presentation and exact signed APR inside an authenticated encrypted session (§12.7.2). It requires no ZKA bundle; compliance-only ZKA bundles fail `EMPTY_BUNDLE`. Production subject proofs and scoped APR-key binding remain deployment obligations.
+- **ZKA v0.9.2-draft** - settlement and coordination substrate; `zka:bundle:v1` carries Coord proofs and selects AFP's authenticated ZKC-only presentation context without changing the bundle, transaction, or Coord session context.
+- **ZKC v0.4.1-draft** - anonymous/scoped/consented-linkable presentation profiles; rebind is scoped v2 or consented linkable v1 only.
+- **KERI** - tenant and entity AIDs, KELs, witnesses.
+- **AFP-KDC v1.0.3** - shared derivation and fixed-byte ownership metadata, retaining the exact v1.0.2 Poseidon2 parameters and conformance vectors in Appendix A.
+
+The machine-checked composition boundary is family epoch `zka:protocol-family:2026-10-26.1`.
+
+## Current AFP Artifacts
+
+- `afp:credential-envelope:v1`
+- `afp:witness-bootstrap:v1`
+- `afp:rotation-presentation:v1`
+- `afp:telemetry-sample-binding:v1`
+- `afp:zkc-presentation-context:v2`
+- `afp.telemetry.instance_attestation.v2`
+- `afp:mixnet-directory:v1`
+- `afp:session:v1`
+- `afp:envelope:v1`
+- `afp:payment-quote:v1`
+- `afp:payment-receipt:v1`
+- `afp:payment-policy:v2`
+- `afp:payment-quote:v2`
+- `afp:payment-receipt:v2`
+
+## Attestation Roots (§6.3.1)
+
+`afp.telemetry.instance_attestation.v2` supports three registered root classes. Each
+verifier chooses the root classes and authorities it accepts in authenticated policy:
+
+- `root:build-provenance` - reproducible-build provenance (SLSA/sigstore) with public
+  transparency-log inclusion verified, not signature-only. Third-party-verifiable.
+- `root:tee-attestation` - TEE remote attestation (SEV-SNP, TDX). Third-party-verifiable.
+- `root:publisher-manifest` - an organizational authority signing manifests for builds it
+  produces. **Self-attested at the platform layer, not third-party-issued.** Carries the
+  public-sample binding and honest-disclosure duties defined by the specification.
+
+The v2 public statement, private witness, circuit branches, cadence, failure signals, and
+root-specific verifier obligations are normative. `afp.telemetry.instance_attestation.v1`
+remains frozen under its original publisher-issued semantics and MUST NOT be reinterpreted
+under v2; `afp.telemetry.build_currency.v1` likewise retains its published classification.
+The operator-facing telemetry predicate catalog is closed; predicate pluralism applies to
+bilateral tenant-to-tenant attestation (§5.8), where each verifier sets its own acceptance
+policy.
+
+## Removed v0.2 Surfaces
+
+Do not implement agent manifests, `afp.{org}.discover`, `afp.{org}.task.*`,
+external observation contribution, individual-agent reputation, trust-escalation levels,
+NKey identity, or `/afp/v1/*` HTTP bridge endpoints as current AFP.
+
+That narrowing followed one implementation's product scope, not a property of federation.
+A fully open, multi-platform ecosystem would have to re-add most of that surface, and a
+discovery feed in particular conflicts with AFP's §8.2 coordination-graph privacy
+(OB-2) properties. AFP does not carry that surface today.
+
+**OB-2 limits (§8.10):** Federation membership remains visible: constant cover-traffic
+emission reveals participation. Mixing and cover traffic mitigate but do not eliminate
+long-horizon statistical disclosure, especially for an adversary observing a small
+federation over a long period. A coalition of mix-node operators can directly trace
+every packet whose whole path it holds; if it can hold any valid path, then over
+sustained traffic it will almost certainly trace some packet of a pairing. Other
+inference and active attacks are not bounded, and the directory cannot prove that
+operators are independent.
+These limits apply even with an operational mixnet;
+deployments without the required routing and cover traffic must disclose OB-2 as not met.
+
+## Profiles
+
+AFP owns the Bilateral Session Core. PRP and VXP are AFP profiles over that core,
+not peer federation protocols.
+
+Telemetry and known-counterparty bilateral proofs default anonymous. Introduction
+and open federation require scoped continuity bound to the AFP AID (KERI semantics), ZKC credential
+subject, APR signer, AFP policy, session, and an authoritative trust-flow purpose.
+Current proofs use `afp:zkc-presentation-context:v2`, reducing its SHA-256/JCS digest
+canonically to a nonzero BN254 scalar. The verifier result must return a subject AID
+from an issuer-authenticated claim or companion proof; generic KYC and jurisdiction
+proofs cannot establish it alone. Verification fails closed rather than falling back
+to the historical v1 context. Linkable v1 requires explicit consent.
+
+The experimental `pay` v1.0 profile binds a signed USD-minor-unit obligation to
+an exact WETH-wei quote and the immutable Base ZKA-native WETH pool. AFP owns the
+quote; ZKA owns private settlement; APL owns route execution/finality. Additional
+assets require separate pools and risk profiles. A native stable unit is not a
+prerequisite.

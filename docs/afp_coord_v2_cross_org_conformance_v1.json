@@ -1,0 +1,749 @@
+{
+  "format": "afp-coord-v2-cross-org-conformance-v1",
+  "interface_version": "0.3.12-draft",
+  "normative_reference": "docs/afp_specification.md#coord-v2-reconciliation-and-reciprocal-compute-integration",
+  "scope": {
+    "receipt": "zka:coord:receipt:v2",
+    "bundle": "zka:bundle:v1",
+    "envelope": "afp:envelope:v1",
+    "purpose": "Cross-organization PRP reconciliation and VXP reciprocal-compute completion",
+    "ownership": {
+      "zka": "Canonical bundle, Coord final proof, CoordReceipt public inputs, profile and artifact identities, and cryptographic verification",
+      "afp": "Authenticated bilateral session, signed X_ session context, profile-policy binding, private evidence-reference authorization, and atomic durable replay/effect recording"
+    },
+    "wire_extension": false
+  },
+  "source_pins": {
+    "repository": "pyramidal-io/ZKA.dev",
+    "commit": "6e484dd07c2ae907f17d33fceeb12eff98ce3cb7",
+    "files": [
+      {
+        "role": "private-reconciliation-profile",
+        "path": "profiles/coord-v2/private-reconciliation-v1.json",
+        "sha256": "sha256:95b657020189c074976fcd49e0502d52d12445907caae7c6199292163c309560"
+      },
+      {
+        "role": "reciprocal-compute-profile",
+        "path": "profiles/coord-v2/reciprocal-compute-v1.json",
+        "sha256": "sha256:11a25ff351add2b60172bb7d331eef862c97458185dbfd5834951ef04c394733"
+      },
+      {
+        "role": "reciprocal-ack-profile",
+        "path": "profiles/coord-v2/reciprocal-ack-v1.json",
+        "sha256": "sha256:de85a9ad42e5b33de771569884b55030f14b88a9a413ff56a1ea24864242f15a"
+      },
+      {
+        "role": "coord-application-receipt-schema",
+        "path": "schemas/public-inputs/zka_coord_v2.json",
+        "sha256": "sha256:1ad1defd3045122f4de9b47be83f60d490f44052b3cee7fe27d531bd50e4e9c2"
+      },
+      {
+        "role": "coord-final-recursive-receipt-schema",
+        "path": "schemas/public-inputs/zka_coord_v2_recursive.json",
+        "sha256": "sha256:f8e58f59d17406baab44923ed539108167e616d7ce3d87bdc9fd22a87a28e9a1"
+      },
+      {
+        "role": "zka-bundle-schema",
+        "path": "schemas/compliance-bundle-v1.schema.json",
+        "sha256": "sha256:fbe249ee089d9d22111ac2f3c7536ee859185ff4693608b44bd101102b78e49e"
+      },
+      {
+        "role": "private-reconciliation-vector",
+        "path": "tests/vectors/coord_v2_private_reconciliation.json",
+        "sha256": "sha256:e67cb47f9b63e71fea021f1edbca846b40ed5d37481b28900f90f34657cbdec8"
+      },
+      {
+        "role": "reciprocal-exchange-vector",
+        "path": "tests/vectors/coord_v2_reciprocal_exchange.json",
+        "sha256": "sha256:bb3855783c02f20938ac748f731c892b6a80252c9c2e06c39fcd752537700af4"
+      }
+    ]
+  },
+  "coord_receipt_coordinates": {
+    "protocol_version": 2,
+    "application_public_field_elements": 30,
+    "final_recursive_public_field_elements": 33,
+    "final_recursive_circuit": "zka_coordination_v2_recursive",
+    "final_recursive_artifact_role_field": "0x0000000000000000000000000000000000000000000000000000000000000002",
+    "final_recursive_vk_field_hash": "0x2e72267c8a0c8750a5cfe2e2893ec689ae9b4a488938ac084aeff1b470d055a2",
+    "allowed_targets": [
+      "aztec",
+      "evm",
+      "offchain"
+    ],
+    "schema_rule": "Consume the pinned ZKA schema exactly; AFP does not restate, add, rename, or reorder receipt public inputs."
+  },
+  "context_mapping": {
+    "input_encoding": "X_ followed by exactly 64 lowercase hexadecimal digits",
+    "input_semantics": "The 32-byte payload of the already-signed AFP session_context",
+    "field_modulus": "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+    "algorithm": "unsigned_big_endian_uint256(payload) mod BN254_scalar_modulus",
+    "output_encoding": "0x followed by exactly 64 lowercase hexadecimal digits",
+    "output_locations": [
+      "zka:bundle:v1 metadata.context",
+      "zka:coord:receipt:v2 context"
+    ],
+    "zero_result": "reject",
+    "fallback": "forbidden",
+    "accepted_kats": [
+      {
+        "name": "one",
+        "session_context": "X_0000000000000000000000000000000000000000000000000000000000000001",
+        "coord_context": "0x0000000000000000000000000000000000000000000000000000000000000001"
+      },
+      {
+        "name": "modulus-minus-one",
+        "session_context": "X_30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000",
+        "coord_context": "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000"
+      },
+      {
+        "name": "modulus-plus-one-reduces-to-one",
+        "session_context": "X_30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000002",
+        "coord_context": "0x0000000000000000000000000000000000000000000000000000000000000001"
+      },
+      {
+        "name": "published-afp-session",
+        "session_context": "X_eddb6ad038bd9a1a79c6c1d29ebd7461da0383948b7e6c13dadd6553b97e4a7f",
+        "coord_context": "0x2c4a3104b3f719739885aaf898b812ed3933e272a498a9cecb558f03f97e4a7b"
+      },
+      {
+        "name": "maximum-uint256",
+        "session_context": "X_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "coord_context": "0x0e0a77c19a07df2f666ea36f7879462e36fc76959f60cd29ac96341c4ffffffa"
+      }
+    ],
+    "rejected_kats": [
+      {
+        "name": "zero-payload",
+        "session_context": "X_0000000000000000000000000000000000000000000000000000000000000000",
+        "reason": "zero-reduction"
+      },
+      {
+        "name": "modulus-reduces-to-zero",
+        "session_context": "X_30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001",
+        "reason": "zero-reduction"
+      },
+      {
+        "name": "uppercase-prefix",
+        "session_context": "x_eddb6ad038bd9a1a79c6c1d29ebd7461da0383948b7e6c13dadd6553b97e4a7f",
+        "reason": "noncanonical-input"
+      },
+      {
+        "name": "uppercase-hex",
+        "session_context": "X_EDDB6AD038BD9A1A79C6C1D29EBD7461DA0383948B7E6C13DADD6553B97E4A7F",
+        "reason": "noncanonical-input"
+      },
+      {
+        "name": "short-payload",
+        "session_context": "X_01",
+        "reason": "wrong-length"
+      },
+      {
+        "name": "field-form-substitution",
+        "session_context": "0x2c4a3104b3f719739885aaf898b812ed3933e272a498a9cecb558f03f97e4a7b",
+        "reason": "not-an-afp-session-context"
+      }
+    ]
+  },
+  "profile_mappings": [
+    {
+      "mapping_id": "prp-private-reconciliation-v1",
+      "afp_profile": "prp",
+      "profile_id": "zka:coord:private-reconciliation:v1",
+      "profile_id_field": "0x147446fe0f34833135f89bc9d7aa756cb778f8e8fbd77e570996ff1a8df752e1",
+      "profile_version": 1,
+      "source_manifest_assurance": "zk-native",
+      "receipt_assurance": "zkNative",
+      "application_circuit": "zka_coord_reconciliation",
+      "application_vk_field_hash": "0x0bd66b2eb5d199726ef90f307069782beae1afe6d9a7488ec2c1e251d7b78f63",
+      "manifest_file_sha256": "sha256:95b657020189c074976fcd49e0502d52d12445907caae7c6199292163c309560",
+      "pinned_profile_manifest_field": "0x00502511877b0c7502792ccc35e841e36d067ba98925728253bc66ccb1082768",
+      "profile_manifest_field_origin": "Derived with ZKA compute_coord_profile_manifest_hash over the exact pinned private-reconciliation manifest; the pinned commit does not publish this value as a vector literal.",
+      "data_availability_commitment": "nonzero",
+      "external_fact_commitment": "zero",
+      "claim": "The committed private reconciliation workflow completed with the policy-selected output and state commitments."
+    },
+    {
+      "mapping_id": "vxp-reciprocal-compute-v1",
+      "afp_profile": "vxp",
+      "profile_id": "zka:coord:vxp-reciprocal-compute:v1",
+      "profile_id_field": "0x1aba8f8267027cdbd3e5ac25dc6767ffaf379e08541452dd1ea6b7a6f9710607",
+      "profile_version": 1,
+      "source_manifest_assurance": "zk-native",
+      "receipt_assurance": "zkNative",
+      "application_circuit": "zka_coord_reciprocal_compute",
+      "application_vk_field_hash": "0x2073432bf50f20e8cd5127a9734419ff866ce08e0d2b6a7b8a09e6491e425319",
+      "manifest_file_sha256": "sha256:11a25ff351add2b60172bb7d331eef862c97458185dbfd5834951ef04c394733",
+      "pinned_profile_manifest_field": "0x21b14f3d82f54bfef2ae81ca254081bf0e94dd6ae7c0d7ca7a42684ef3d5a61c",
+      "profile_manifest_field_origin": "Published by the pinned reciprocal-exchange vector for the exact reciprocal-compute manifest.",
+      "data_availability_commitment": "nonzero",
+      "external_fact_commitment": "zero",
+      "claim": "The committed reciprocal-compute leg completed with the policy-selected output and state commitments."
+    },
+    {
+      "mapping_id": "vxp-reciprocal-ack-v1",
+      "afp_profile": "vxp",
+      "profile_id": "zka:coord:vxp-reciprocal-ack:v1",
+      "profile_id_field": "0x23087cc4ad08d9dbc80318a7e7eb8df9618112319bca1c10f93fcd37073ebc6d",
+      "profile_version": 1,
+      "source_manifest_assurance": "attested",
+      "receipt_assurance": "attested",
+      "application_circuit": "zka_coord_reciprocal_ack",
+      "application_vk_field_hash": "0x1bce6effb5f61fce0f27a7257ff301b67538699e675d0c6617da014d6cbf29dd",
+      "manifest_file_sha256": "sha256:de85a9ad42e5b33de771569884b55030f14b88a9a413ff56a1ea24864242f15a",
+      "pinned_profile_manifest_field": "0x2b622e9a71c5e351bfef8d54e970084c483f7f1c158fe893296cdbaa117f2f1d",
+      "profile_manifest_field_origin": "Published by the pinned reciprocal-exchange vector for the exact reciprocal-acknowledgement manifest.",
+      "data_availability_commitment": "zero",
+      "external_fact_commitment": "nonzero",
+      "claim": "The committed recipient-signed reciprocal acknowledgement was checked under the selected trust anchors.",
+      "does_not_claim": [
+        "reciprocal computation",
+        "delivery",
+        "decryptability",
+        "settlement",
+        "acceptance of a broader VXP outcome"
+      ]
+    }
+  ],
+  "acceptance_policy": {
+    "kind": "afp:coord-acceptance-policy:v1",
+    "session_binding": "The live signed afp:session:v1 profile_policy_hash must equal the exact policy hash below.",
+    "request_selectable": false,
+    "required_members": [
+      "kind",
+      "receiptKind",
+      "afpProfile",
+      "profileId",
+      "profileIdField",
+      "workflowDefinitionHash",
+      "workflowInstanceId",
+      "completionStepId",
+      "verifierPolicyRoot",
+      "acceptedProfileBindings",
+      "acceptedArtifacts",
+      "requireDataAvailability",
+      "requireExternalFacts",
+      "expectedInitialStateCommitment",
+      "expectedOutputCommitment",
+      "expectedPostStateCommitment"
+    ],
+    "accepted_profile_binding_members": [
+      "profileVersion",
+      "profileManifestHash",
+      "profileVkHash",
+      "assuranceClass"
+    ],
+    "accepted_artifact_binding_members": [
+      "role",
+      "circuitId",
+      "artifactEntryHash",
+      "schemaHash",
+      "target",
+      "verificationKeyHash"
+    ],
+    "array_canonicalization": "acceptedProfileBindings and acceptedArtifacts are nonempty, duplicate-free, and sorted by their own canonical JSON encoding.",
+    "hash_method": {
+      "canonicalization": "UTF-8 JSON with object keys sorted lexicographically, no insignificant whitespace, separators ',' and ':', and non-ASCII characters emitted directly",
+      "digest": "SHA-256",
+      "encoding": "D_ followed by 64 lowercase hexadecimal digits"
+    },
+        "hash_kat": {
+            "coordinate_origin": "Workflow and state fields are fixture-only nonzero values. The profile version, manifest field, profile VK, recursive role/circuit/VK, artifact-entry hash, and schema hash are derived from the pinned ZKA publication; the recursive policy entry uses ZKA's published live-fixture sourceDigest/toolchainDigest convention.",
+      "policy": {
+        "kind": "afp:coord-acceptance-policy:v1",
+        "receiptKind": "zka:coord:receipt:v2",
+        "afpProfile": "prp",
+        "profileId": "zka:coord:private-reconciliation:v1",
+        "profileIdField": "0x147446fe0f34833135f89bc9d7aa756cb778f8e8fbd77e570996ff1a8df752e1",
+        "workflowDefinitionHash": "0x0000000000000000000000000000000000000000000000000000000000000101",
+        "workflowInstanceId": "0x0000000000000000000000000000000000000000000000000000000000000102",
+        "completionStepId": "0x0000000000000000000000000000000000000000000000000000000000000103",
+        "verifierPolicyRoot": "0x0000000000000000000000000000000000000000000000000000000000000104",
+        "acceptedProfileBindings": [
+          {
+            "profileVersion": 1,
+            "profileManifestHash": "0x00502511877b0c7502792ccc35e841e36d067ba98925728253bc66ccb1082768",
+            "profileVkHash": "0x0bd66b2eb5d199726ef90f307069782beae1afe6d9a7488ec2c1e251d7b78f63",
+            "assuranceClass": "zkNative"
+          }
+        ],
+        "acceptedArtifacts": [
+          {
+            "role": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "circuitId": "zka_coordination_v2_recursive",
+                        "artifactEntryHash": "0x1520451d4710b91c59f982d7c148ba89c52d7e10c842bbb30a3a25b083784fae",
+                        "schemaHash": "0x18a3537ebe76dccbc7ca7a3f80eab71cdb3602df63bc6ad27bc4a7b5b9937c4a",
+            "target": "offchain",
+            "verificationKeyHash": "0x2e72267c8a0c8750a5cfe2e2893ec689ae9b4a488938ac084aeff1b470d055a2"
+          }
+        ],
+        "requireDataAvailability": true,
+        "requireExternalFacts": false,
+        "expectedInitialStateCommitment": "0x0000000000000000000000000000000000000000000000000000000000000108",
+        "expectedOutputCommitment": "0x0000000000000000000000000000000000000000000000000000000000000109",
+        "expectedPostStateCommitment": "0x000000000000000000000000000000000000000000000000000000000000010a"
+      },
+            "profile_policy_hash": "D_90a1362e9eebb1a4d0bafd4a522d3c786282678dba7890fae092094f57eeb2a3"
+    }
+  },
+  "cross_org_model": {
+    "participants": [
+      {
+        "organization": "org-a",
+        "entity_aid": "$org_a_keri_entity_aid",
+        "role": "one authenticated AFP session principal"
+      },
+      {
+        "organization": "org-b",
+        "entity_aid": "$org_b_keri_entity_aid",
+        "role": "the other authenticated AFP session principal"
+      }
+    ],
+    "session": {
+      "party_count": 2,
+      "session_ref": "$live_signed_session_ref",
+      "session_context": "$live_signed_X_context",
+      "authentication": "Each envelope sender is the expected counterparty and verifies under its KEL-current key and declared witness threshold.",
+      "confidentiality": "The bilateral channel is end-to-end encrypted and metadata-private under AFP session-core policy."
+    },
+    "private_data": {
+      "wire_presence": "absent",
+      "storage": "party-controlled or authorized evidence stores",
+      "forbidden_in_bundle_or_fixture": [
+        "private record sets",
+        "reciprocal input or output chunks",
+        "proof witnesses",
+        "proving keys",
+        "decryption material",
+        "delivery secrets"
+      ],
+      "allowed_public_surrogates": [
+        "canonical Coord final proof bytes",
+        "canonical CoordReceipt commitments",
+        "canonical artifact identity",
+        "profile-policy commitments"
+      ]
+    },
+    "evidence_references": {
+      "transport": "verifier-local or separately authorized retrieval; never embedded private evidence",
+      "members": [
+        "aggregateCommitment",
+        "opaqueReference",
+        "kind"
+      ],
+      "reference_digest": "sha256: followed by SHA-256 of canonical JSON over aggregateCommitment, opaqueReference, and kind",
+      "verification": "Before invoking either configured verifier method, require exactly one reference for each nonzero receipt data-availability or external-fact commitment and no other reference. The verifier must retrieve and authenticate every admitted reference and return the exact sorted reference digests it verified; availability is a verifier outcome, never a caller-controlled member."
+    },
+    "completion_order": [
+      "authenticate the bilateral session and sending party",
+      "require message_class=result and the profile-defined sender direction",
+      "recompute and compare the signed AFP session context",
+      "derive the canonical Coord field context",
+      "require the session-committed acceptance policy",
+      "validate canonical RFC 3339 bundle metadata and reject an expired bundle",
+      "consult the durable workflow-instance record; reject changed bytes, or recover an exact prior effect without depending on current verifier availability",
+      "invoke the deployment-bound verifier over the complete canonical ZKA bundle",
+      "invoke that same verifier over the Coord final proof and authorized evidence",
+      "compare every receipt, profile, assurance, artifact, output, state, and evidence binding",
+      "atomically persist the workflow-instance replay identity and canonical envelope effect",
+      "only then project that durable record into the in-memory profile inbox"
+    ],
+    "pure_coord_bundle_profile": {
+      "exact_top_level_members": [
+        "compliance",
+        "coord_proof",
+        "metadata"
+      ],
+      "exact_compliance_value": {
+        "proofs": []
+      },
+      "forbidden_side_channels": [
+        "transaction",
+        "binding",
+        "compliance proofs",
+        "compliance aggregation",
+        "unknown members",
+        "explicit null placeholders"
+      ]
+    }
+  },
+  "cryptographic_verifier_boundary": {
+    "deployment_requirement": "A conforming pilot binds one concrete verifier adapter when the AFP Instance is created. That adapter must verify the complete canonical zka:bundle:v1 and the Coord final proof against the pinned ZKA profile, manifest, verification-key, recursive-artifact, and evidence-store coordinates.",
+    "authority_rule": "The verifier and durable completion store are deployment-owned capabilities; an envelope sender or receive call cannot replace either one.",
+    "terminal_outcome_rule": "The configured verifier may preserve only an exact allowlisted terminal COORD_V2 code through the typed CoordVerifierRejected signal. Unsupported, mutated, textual, or consumer-owned codes collapse to COORD_V2_VERIFIER_FAILURE; backend text is never returned.",
+    "reference_test_scope": "The standard-library AFP tests use a deterministic conformance double only to exercise the consumer boundary, failure mapping, authority binding, and atomic storage. That double is not cryptographic proof evidence and cannot by itself satisfy a cross-organization pilot.",
+    "positive_case_assertion": "independent_final_proof_verification=true is evidence a real pilot must obtain from its configured ZKA adapter before reporting the positive case as complete.",
+    "retransmission_rule": "After session authentication, structural/freshness checks, and policy binding, a byte-identical durable record is already verified authority and may repair its inbox projection without recontacting a now-unavailable verifier; an unseen completion still requires both verifier calls."
+  },
+  "positive_pilot_cases": [
+    {
+      "case_id": "cross-org-prp-private-reconciliation",
+      "mapping_id": "prp-private-reconciliation-v1",
+      "sender": "org-a",
+      "recipient": "org-b",
+      "authenticated_parties": true,
+      "private_payload_on_wire": false,
+      "evidence_reference": {
+        "kind": "prp-data-availability",
+        "aggregateCommitment": "0x0000000000000000000000000000000000000000000000000000000000000201",
+        "opaqueReference": "urn:afp:coord-evidence:pilot:prp:da:001"
+      },
+      "independent_final_proof_verification": true,
+      "expected": {
+        "accepted": true,
+        "new_completion": true,
+        "completion_effect_count": 1
+      }
+    },
+    {
+      "case_id": "cross-org-vxp-reciprocal-compute",
+      "mapping_id": "vxp-reciprocal-compute-v1",
+      "sender": "org-a",
+      "recipient": "org-b",
+      "authenticated_parties": true,
+      "private_payload_on_wire": false,
+      "evidence_reference": {
+        "kind": "vxp-reciprocal-data-availability",
+        "aggregateCommitment": "0x0000000000000000000000000000000000000000000000000000000000000202",
+        "opaqueReference": "urn:afp:coord-evidence:pilot:vxp:compute:001"
+      },
+      "independent_final_proof_verification": true,
+      "expected": {
+        "accepted": true,
+        "new_completion": true,
+        "completion_effect_count": 1
+      }
+    },
+    {
+      "case_id": "cross-org-vxp-reciprocal-acknowledgement",
+      "mapping_id": "vxp-reciprocal-ack-v1",
+      "sender": "org-b",
+      "recipient": "org-a",
+      "authenticated_parties": true,
+      "private_payload_on_wire": false,
+      "evidence_reference": {
+        "kind": "vxp-reciprocal-acknowledgement",
+        "aggregateCommitment": "0x0000000000000000000000000000000000000000000000000000000000000203",
+        "opaqueReference": "urn:afp:coord-evidence:pilot:vxp:ack:001"
+      },
+      "independent_final_proof_verification": true,
+      "expected": {
+        "accepted": true,
+        "new_completion": true,
+        "completion_effect_count": 1,
+        "claim_scope": "attested reciprocal acknowledgement only"
+      }
+    }
+  ],
+  "negative_cases": [
+    {
+      "case_id": "unknown-profile-text",
+      "mutation": "Use a profile identifier outside the three exact mappings.",
+      "expected_failure_class": "unknown_profile",
+      "retryable": false
+    },
+    {
+      "case_id": "profile-text-field-substitution",
+      "mutation": "Pair one accepted profile text identifier with another profile's field identifier.",
+      "expected_failure_class": "unknown_profile",
+      "retryable": false
+    },
+    {
+      "case_id": "wrong-session-reference",
+      "mutation": "Move the envelope to a different live session_ref.",
+      "expected_failure_class": "session_or_context",
+      "retryable": false
+    },
+    {
+      "case_id": "wrong-envelope-session-context",
+      "mutation": "Replace the signed X_ context with another canonical AFP context.",
+      "expected_failure_class": "session_or_context",
+      "retryable": false
+    },
+    {
+      "case_id": "wrong-coord-field-context",
+      "mutation": "Change bundle.metadata.context or CoordReceipt.context after deriving it.",
+      "expected_failure_class": "session_or_context",
+      "retryable": false
+    },
+    {
+      "case_id": "wrong-authenticated-party",
+      "mutation": "Present the envelope under an AID other than the expected session counterparty.",
+      "expected_failure_class": "identity",
+      "retryable": false
+    },
+    {
+      "case_id": "wrong-profile-direction",
+      "mutation": "Send PRP reconciliation or VXP compute from the responder, or send the reciprocal acknowledgement from the initiator.",
+      "expected_failure_class": "session_or_context",
+      "retryable": false
+    },
+    {
+      "case_id": "wrong-message-class",
+      "mutation": "Carry a Coord completion using any AFP message_class other than result.",
+      "expected_failure_class": "proof_failure",
+      "retryable": false
+    },
+    {
+      "case_id": "malformed-or-expired-bundle-metadata",
+      "mutation": "Use malformed RFC 3339 generatedAt/expiresAt values, an expiry before generation, or a bundle expired at verification time.",
+      "expected_failure_class": "session_or_context",
+      "retryable": false
+    },
+    {
+      "case_id": "uncommitted-policy",
+      "mutation": "Verify under a policy whose hash differs from the live signed session profile_policy_hash.",
+      "expected_failure_class": "workflow_or_policy",
+      "retryable": false
+    },
+    {
+      "case_id": "wrong-workflow-or-completion-step",
+      "mutation": "Change the workflow definition, workflow instance, or completion step.",
+      "expected_failure_class": "workflow_or_policy",
+      "retryable": false
+    },
+    {
+      "case_id": "altered-output-or-state",
+      "mutation": "Change the initial state, output, or post-state commitment from policy.",
+      "expected_failure_class": "workflow_or_policy",
+      "retryable": false
+    },
+    {
+      "case_id": "manifest-vk-or-artifact-substitution",
+      "mutation": "Change the accepted profile manifest field, profile VK, recursive artifact, target, schema, or artifact VK.",
+      "expected_failure_class": "manifest_vk_or_artifact",
+      "retryable": false
+    },
+    {
+      "case_id": "wrong-assurance",
+      "mutation": "Use attested for PRP or VXP compute, or zkNative for the reciprocal acknowledgement.",
+      "expected_failure_class": "assurance",
+      "retryable": false
+    },
+    {
+      "case_id": "altered-evidence-reference",
+      "mutation": "Change an authorized opaque reference, kind, or aggregate commitment after verifier authorization.",
+      "expected_failure_class": "evidence_alteration",
+      "retryable": false
+    },
+    {
+      "case_id": "unnecessary-extra-evidence-reference",
+      "mutation": "Add an otherwise authorized reference whose aggregate commitment is not one of the receipt's nonzero data-availability or external-fact commitments, or add a second kind for the same commitment.",
+      "expected_failure_class": "evidence_alteration",
+      "retryable": false
+    },
+    {
+      "case_id": "altered-proof",
+      "mutation": "Change the canonical final proof, receipt, or proof digest after independent verification.",
+      "expected_failure_class": "proof_failure",
+      "retryable": false
+    },
+    {
+      "case_id": "legacy-opaque-coord-string",
+      "mutation": "Offer a legacy opaque coord string as PRP or VXP completion evidence.",
+      "expected_failure_class": "proof_failure",
+      "retryable": false,
+      "recovery": "Conduct a fresh canonical Coord v2 exchange."
+    },
+    {
+      "case_id": "private-material-injection",
+      "mutation": "Add a private-record, witness, proving-key, plaintext, secret, nonce, or delivery-material member to the Coord proof object or smuggle it through compliance.aggregation, another bundle member, or a null placeholder.",
+      "expected_failure_class": "proof_failure",
+      "retryable": false
+    },
+    {
+      "case_id": "generic-envelope-bypass",
+      "mutation": "Attempt to submit a PRP or VXP bundle containing coord_proof through the generic receive_envelope path.",
+      "expected_failure_class": "proof_failure",
+      "retryable": false
+    },
+    {
+      "case_id": "unconfigured-or-request-selected-authority",
+      "mutation": "Attempt Coord completion without an Instance-bound verifier/store context or attempt to replace those capabilities on the receive call.",
+      "expected_failure_class": "proof_failure",
+      "retryable": false
+    },
+    {
+      "case_id": "acknowledgement-overclaim",
+      "mutation": "Use a reciprocal acknowledgement policy or effect that claims computation, delivery, settlement, or a broader VXP outcome.",
+      "expected_failure_class": "workflow_or_policy",
+      "retryable": false
+    }
+  ],
+  "retry_cases": [
+    {
+      "case_id": "authorized-data-temporarily-unavailable",
+      "precondition": "The proof and policy are otherwise valid, but the configured verifier's authorized evidence backend raises the typed temporary-unavailability signal while retrieving a required reference.",
+      "expected_failure_class": "temporary_authorized_data_unavailability",
+      "retryable": true,
+      "completion_recorded": false,
+      "replay_identity_reserved": false
+    },
+    {
+      "case_id": "authorized-data-becomes-available",
+      "precondition": "Retry the byte-identical proof, policy, evidence references, and envelope after the configured verifier can retrieve and authenticate the reference.",
+      "expected": {
+        "accepted": true,
+        "new_completion": true,
+        "completion_effect_count": 1
+      }
+    }
+  ],
+  "replay_cases": [
+    {
+      "case_id": "first-acceptance",
+      "identity": [
+        "workflowInstanceId",
+        "session_ref",
+        "receiptCommitment",
+        "completion_digest",
+        "canonical_envelope_bytes"
+      ],
+      "expected": {
+        "accepted": true,
+        "new_completion": true,
+        "completion_effect_count": 1
+      }
+    },
+    {
+      "case_id": "exact-retransmission",
+      "mutation": "None; resend the byte-identical canonical completion under the same authenticated session.",
+      "expected": {
+        "accepted": true,
+        "new_completion": false,
+        "incremental_completion_effect_count": 0,
+        "durable_completion_record_count": 1
+      }
+    },
+    {
+      "case_id": "changed-receipt-on-reserved-workflow-instance",
+      "mutation": "Change receiptCommitment or completion_digest while retaining workflowInstanceId.",
+      "expected_failure_class": "replay",
+      "retryable": false,
+      "completion_effect_count": 0
+    },
+    {
+      "case_id": "cross-session-replay",
+      "mutation": "Reuse a reserved workflowInstanceId and receipt under a different session_ref or party pair.",
+      "expected_failure_class": "replay",
+      "retryable": false,
+      "completion_effect_count": 0
+    },
+    {
+      "case_id": "concurrent-first-use",
+      "mutation": "Two verifiers race to reserve the same previously unseen completion.",
+      "expected": {
+        "atomic_winners": 1,
+        "durable_completion_record_count": 1,
+        "incremental_completion_effect_count": 1,
+        "other_result": "exact-retransmission-idempotent"
+      }
+    }
+  ],
+  "redaction_cases": [
+    {
+      "case_id": "verifier-exception-is-redacted",
+      "injected_backend_condition": "The configured verifier raises an exception whose text contains private backend material.",
+      "expected_failure_class": "proof_failure",
+      "public_error_contains_backend_text": false,
+      "completion_recorded": false
+    },
+    {
+      "case_id": "evidence-alteration-is-redacted",
+      "injected_backend_condition": "Authorized evidence bytes do not match the public aggregate commitment.",
+      "expected_failure_class": "evidence_alteration",
+      "public_error_contains_evidence_bytes": false,
+      "completion_recorded": false
+    },
+    {
+      "case_id": "malformed-private-member-is-not-echoed",
+      "injected_backend_condition": "A proof object contains a forbidden private-material member.",
+      "expected_failure_class": "proof_failure",
+      "public_error_echoes_member_or_value": false,
+      "completion_recorded": false
+    }
+  ],
+  "stable_terminal_failure_classes": [
+    "unknown_profile",
+    "session_or_context",
+    "identity",
+    "workflow_or_policy",
+    "manifest_vk_or_artifact",
+    "assurance",
+    "evidence_alteration",
+    "replay",
+    "proof_failure"
+  ],
+  "reference_failure_code_mapping": {
+    "unknown_profile": [
+      "COORD_V2_PROFILE_POLICY"
+    ],
+    "session_or_context": [
+      "AFP_COORD_SESSION_CONTEXT",
+      "COORD_V2_IDENTIFIER",
+      "COORD_V2_SCOPE"
+    ],
+    "identity": [
+      "AFP_COORD_IDENTITY"
+    ],
+    "workflow_or_policy": [
+      "COORD_V2_PROFILE_POLICY",
+      "COORD_V2_SCOPE",
+      "COORD_V2_INCOMPLETE_WORKFLOW"
+    ],
+    "manifest_vk_or_artifact": [
+      "COORD_V2_PROFILE_POLICY",
+      "COORD_V2_ARTIFACT"
+    ],
+    "assurance": [
+      "COORD_V2_ASSURANCE",
+      "COORD_V2_PROFILE_POLICY"
+    ],
+    "evidence_alteration": [
+      "COORD_V2_APPLICATION_PROOF",
+      "COORD_V2_SCOPE"
+    ],
+    "replay": [
+      "COORD_V2_REPLAY"
+    ],
+    "proof_failure": [
+      "COORD_V2_VERSION",
+      "COORD_V2_PREDECESSOR_COUNT",
+      "COORD_V2_INACTIVE_SLOT",
+      "COORD_V2_APPLICATION_PROOF",
+      "COORD_V2_MALFORMED",
+      "COORD_V2_VERIFIER_FAILURE"
+    ],
+    "temporary_authorized_data_unavailability": [
+      "COORD_V2_DATA_UNAVAILABLE"
+    ]
+  },
+  "stable_reference_codes": [
+    "COORD_V2_VERSION",
+    "COORD_V2_IDENTIFIER",
+    "COORD_V2_PREDECESSOR_COUNT",
+    "COORD_V2_INACTIVE_SLOT",
+    "COORD_V2_ASSURANCE",
+    "COORD_V2_PROFILE_POLICY",
+    "COORD_V2_ARTIFACT",
+    "COORD_V2_APPLICATION_PROOF",
+    "COORD_V2_SCOPE",
+    "COORD_V2_INCOMPLETE_WORKFLOW",
+    "COORD_V2_DATA_UNAVAILABLE",
+    "COORD_V2_REPLAY",
+    "COORD_V2_MALFORMED",
+    "COORD_V2_VERIFIER_FAILURE",
+    "AFP_COORD_IDENTITY",
+    "AFP_COORD_SESSION_CONTEXT"
+  ],
+  "privacy_assertions": {
+    "contains_private_witness": false,
+    "contains_private_payload": false,
+    "contains_secret_key": false,
+    "diagnostics_may_include_only": [
+      "stable public failure class",
+      "stable reference failure code",
+      "retryable boolean"
+    ]
+  }
+}

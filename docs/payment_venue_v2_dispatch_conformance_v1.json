@@ -1,0 +1,33 @@
+{
+  "status": "synthetic schema conformance only; not a deployment or activation record",
+  "profile": "pay_venue",
+  "spec_ref": "AFP 0.3.12-draft §15.5, §15.6, §15.9",
+  "quote_vector": "docs/payment_venue_v2_conformance.json",
+  "quoted_at": "2026-07-11T12:00:00Z",
+  "expires_at": "2026-07-11T12:05:00Z",
+  "session": {
+    "profile": "pay_venue",
+    "opened_at": "2026-07-11T12:00:00Z",
+    "expires_at": "2026-07-11T12:11:00Z"
+  },
+  "dispatch_cases": [
+    {"id": "inside-window", "now": "2026-07-11T12:02:00Z", "session": "live", "result": "claimed"},
+    {"id": "last-second", "now": "2026-07-11T12:04:59Z", "session": "live", "result": "claimed"},
+    {"id": "at-expiry", "now": "2026-07-11T12:05:00Z", "session": "live", "result": "rejected", "reason": "quote_expired"},
+    {"id": "after-expiry", "now": "2026-07-11T12:05:01Z", "session": "live", "result": "rejected", "reason": "quote_expired"},
+    {"id": "before-quoted-at", "now": "2026-07-11T11:59:59Z", "session": "live", "result": "rejected", "reason": "quote_not_yet_valid"},
+    {"id": "session-closed", "now": "2026-07-11T12:02:00Z", "session": "closed", "result": "rejected", "reason": "session_not_live"},
+    {"id": "session-expired", "now": "2026-07-11T12:02:00Z", "session": "expired", "result": "rejected", "reason": "session_not_live"},
+    {"id": "other-session", "now": "2026-07-11T12:02:00Z", "session": "other", "result": "rejected", "reason": "session_mismatch"},
+    {"id": "v1-profile-session", "now": "2026-07-11T12:02:00Z", "session": "pay", "result": "rejected", "reason": "profile_mismatch"},
+    {"id": "no-session", "now": "2026-07-11T12:02:00Z", "session": "absent", "result": "rejected", "reason": "session_required"}
+  ],
+  "rejected_dispatch_consumes_route_claim": false,
+  "inclusion_cases": [
+    {"id": "included-before-expiry", "finality": "finalized", "included_at": "2026-07-11T12:02:30Z", "result": "settled"},
+    {"id": "included-last-second", "finality": "finalized", "included_at": "2026-07-11T12:04:59Z", "result": "settled"},
+    {"id": "included-at-expiry", "finality": "finalized", "included_at": "2026-07-11T12:05:00Z", "result": "unsettled"},
+    {"id": "included-after-expiry", "finality": "finalized", "included_at": "2026-07-11T12:30:00Z", "result": "unsettled"},
+    {"id": "inclusion-unproven", "finality": "finalized", "included_at": null, "result": "unsettled"}
+  ]
+}

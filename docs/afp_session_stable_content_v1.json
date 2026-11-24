@@ -1,0 +1,165 @@
+{
+  "format": "afp-session-stable-content-conformance-v1",
+  "status": "synthetic-reference-fixture",
+  "warning": "All material is deterministic, synthetic test-only input. The signing seed is published solely to make this fixture reproducible; it is not a production seed, KEL, identity, tenant, or session.",
+  "specification": "docs/afp_specification.md section 12.2.1, stable session content",
+  "stable_content_members": [
+    "agreement_ref",
+    "agreement_version",
+    "expires_at",
+    "id",
+    "kind",
+    "opened_at",
+    "profile",
+    "profile_policy_hash",
+    "session_context"
+  ],
+  "excluded_members": [
+    "closed_at",
+    "initiator",
+    "responder",
+    "status"
+  ],
+  "content_hash": "\"D_\" || lowercase_hex(SHA-256(RFC8785_JCS_UTF8(stable_content)))",
+  "signed_bytes": "the ASCII bytes of content_hash (66 octets), signed with strict Ed25519 (section 4.4.1)",
+  "datetime_encoding": {
+    "json_type": "string",
+    "format": "RFC3339 UTC whole-second YYYY-MM-DDTHH:MM:SSZ",
+    "minimum": "1970-01-01T00:00:00Z",
+    "maximum": "9999-12-31T23:59:59Z",
+    "expires_at": "REQUIRED; strictly later than opened_at",
+    "closed_at": "absent until the session reaches a terminal state; not a stable-content member"
+  },
+  "vectors": [
+    {
+      "name": "published",
+      "initiator_signing_seed_hex": "46e6794f18979e10746eda23eee4dfa6121b09d989df0461a0d2a5e1c6195dd2",
+      "initiator_public_key_hex": "237fc320430ead4f784df4d2986f62617782f2d0896af29183915c88401c5935",
+      "proposal": {
+        "kind": "afp:session:v1",
+        "id": "sess-1",
+        "initiator": {
+          "tenant_aid": "E_i_tenant",
+          "entity_aid": "E_i",
+          "kel_event_dig": "D_3333333333333333333333333333333333333333333333333333333333333333",
+          "signature": "ba39c8ee7e6721a50b6689aa01620de545b6cf113df98079f9e6bfc28c242b2540338845f3710d5cbaa9ab294fed5d66c2711622c373de39b01576c343534c0e"
+        },
+        "responder": {
+          "tenant_aid": "E_r_tenant",
+          "entity_aid": "E_r",
+          "kel_event_dig": "D_4444444444444444444444444444444444444444444444444444444444444444",
+          "signature": ""
+        },
+        "agreement_ref": "agr-stable-content-kat",
+        "agreement_version": "1",
+        "profile": "work",
+        "profile_policy_hash": "D_5555555555555555555555555555555555555555555555555555555555555555",
+        "status": "proposed",
+        "opened_at": 1700000000,
+        "expires_at": "2023-11-14T23:13:20Z",
+        "session_context": "X_eddb6ad038bd9a1a79c6c1d29ebd7461da0383948b7e6c13dadd6553b97e4a7f"
+      },
+      "stable_content_jcs": "{\"agreement_ref\":\"agr-stable-content-kat\",\"agreement_version\":\"1\",\"expires_at\":\"2023-11-14T23:13:20Z\",\"id\":\"sess-1\",\"kind\":\"afp:session:v1\",\"opened_at\":1700000000,\"profile\":\"work\",\"profile_policy_hash\":\"D_5555555555555555555555555555555555555555555555555555555555555555\",\"session_context\":\"X_eddb6ad038bd9a1a79c6c1d29ebd7461da0383948b7e6c13dadd6553b97e4a7f\"}",
+      "content_hash": "D_055f002248feae3559bbc8000bbac6d63bbd7b1ec864444be94b0daefe9c6c7d",
+      "initiator_signature_hex": "ba39c8ee7e6721a50b6689aa01620de545b6cf113df98079f9e6bfc28c242b2540338845f3710d5cbaa9ab294fed5d66c2711622c373de39b01576c343534c0e"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "expires_at_json_integer",
+      "member": "expires_at",
+      "reason": "a JSON number is not a session datetime",
+      "raw_json_token": "1700003600"
+    },
+    {
+      "name": "expires_at_integral_float",
+      "member": "expires_at",
+      "reason": "a JSON number is not a session datetime",
+      "raw_json_token": "1700003600.0"
+    },
+    {
+      "name": "expires_at_null",
+      "member": "expires_at",
+      "reason": "expires_at is REQUIRED",
+      "raw_json_token": "null"
+    },
+    {
+      "name": "expires_at_fractional_second",
+      "member": "expires_at",
+      "reason": "fractional seconds are noncanonical",
+      "value": "2023-11-14T23:13:20.0Z"
+    },
+    {
+      "name": "expires_at_numeric_offset",
+      "member": "expires_at",
+      "reason": "only the Z designator is canonical",
+      "value": "2023-11-14T23:13:20+00:00"
+    },
+    {
+      "name": "expires_at_lowercase_designators",
+      "member": "expires_at",
+      "reason": "designators are uppercase",
+      "value": "2023-11-14t23:13:20z"
+    },
+    {
+      "name": "expires_at_missing_designator",
+      "member": "expires_at",
+      "reason": "the UTC designator is required",
+      "value": "2023-11-14T23:13:20"
+    },
+    {
+      "name": "expires_at_space_separator",
+      "member": "expires_at",
+      "reason": "the date/time separator is T",
+      "value": "2023-11-14 23:13:20Z"
+    },
+    {
+      "name": "expires_at_leap_second",
+      "member": "expires_at",
+      "reason": "AFP whole-second instants exclude leap seconds",
+      "value": "2016-12-31T23:59:60Z"
+    },
+    {
+      "name": "expires_at_invalid_calendar_date",
+      "member": "expires_at",
+      "reason": "not a calendar date",
+      "value": "2023-02-29T00:00:00Z"
+    },
+    {
+      "name": "expires_at_before_range",
+      "member": "expires_at",
+      "reason": "outside 1970-01-01T00:00:00Z..9999-12-31T23:59:59Z",
+      "value": "1969-12-31T23:59:59Z"
+    },
+    {
+      "name": "expires_at_equals_opened_at",
+      "member": "expires_at",
+      "reason": "expires_at must be strictly later than opened_at",
+      "value": "2023-11-14T22:13:20Z"
+    },
+    {
+      "name": "expires_at_before_opened_at",
+      "member": "expires_at",
+      "reason": "expires_at must be strictly later than opened_at",
+      "value": "2023-11-14T22:13:19Z"
+    },
+    {
+      "name": "closed_at_null",
+      "member": "closed_at",
+      "reason": "closed_at is absent until set",
+      "raw_json_token": "null"
+    },
+    {
+      "name": "closed_at_json_integer",
+      "member": "closed_at",
+      "reason": "a JSON number is not a session datetime",
+      "raw_json_token": "1700003600"
+    },
+    {
+      "name": "closed_at_fractional_second",
+      "member": "closed_at",
+      "reason": "fractional seconds are noncanonical",
+      "value": "2023-11-14T23:13:20.5Z"
+    }
+  ]
+}

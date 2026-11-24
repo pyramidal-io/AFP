@@ -1,0 +1,69 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "False positive: exact AFP mixnet fixture verifier call matched as a generic API key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '''^\n        directory, witness_keys=builder\.witness_keys, quorum_threshold=quorum_threshold$''',
+]
+paths = [
+  '''^tests/python/mixnet_fixtures\.py$''',
+]
+
+[[allowlists]]
+description = "False positive: exact AFP mixnet directory verifier call matched as a generic API key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '''^\n            d, witness_keys=self\.builder\.witness_keys, quorum_threshold=2$''',
+  '''^\n                d, witness_keys=self\.builder\.witness_keys, quorum_threshold=2$''',
+  # This argument is a witness AID -> public-key dictionary, with an integer quorum.
+  '''^\n                    directory, witness_keys=witness_keys, quorum_threshold=2$''',
+]
+paths = [
+  '''^tests/python/test_mixnet_directory\.py$''',
+]
+
+[[allowlists]]
+description = "Public AFP-KDC v1.0.2 KAT outputs whose schema field names end in 'Key'"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '''^\s*"(?:spendingKey|viewingKey|proofKey|credentialBindingKey)"\s*:\s*"0x[0-9a-f]{64}"\s*,?\s*$''',
+]
+paths = [
+  '''^docs/kdc_v1_0_2_conformance_vectors\.json$''',
+]
+
+[[allowlists]]
+description = "Public pinned Coord v2 recursive verification-key field hash"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '''^\s*"verificationKeyHash"\s*:\s*"0x2e72267c8a0c8750a5cfe2e2893ec689ae9b4a488938ac084aeff1b470d055a2"\s*,?\s*$''',
+]
+paths = [
+  '''^docs/afp_coord_v2_cross_org_conformance_v1\.json$''',
+]
+
+# Native APR vectors publish verification keys only: one deterministic synthetic
+# Ed25519 public key and the standard secp256k1 generator point. Neither grants
+# API access or contains signing material. Match only these exact public values
+# under the native fixture's verifierKey field; keep every secret rule active.
+[[allowlists]]
+description = "Exact public APR verification keys in synthetic native credential vectors"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = [
+  '''^\s*"verifierKey"\s*:\s*"(?:817501190962b909efa60e40874abd32e51e782dd66dedca0e689c4ab14a7e82|0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)"\s*,?\s*$''',
+]
+paths = [
+  '''^docs/afp_native_credential_carriage_v1\.json$''',
+]

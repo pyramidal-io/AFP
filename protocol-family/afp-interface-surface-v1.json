@@ -1,0 +1,171 @@
+{
+  "format": "afp:interface-surface:v1",
+  "authority": {
+    "protocol": "afp",
+    "repository": "pyramidal-io/AFP.dev",
+    "surface_path": "protocol-family/afp-interface-surface-v1.json",
+    "specification_path": "docs/afp_specification.md",
+    "specification_set": [
+      "docs/afp_specification.md",
+      "docs/afp_routing_specification.md",
+      "docs/afp_introduction_profile.md",
+      "docs/kdc_specification.md"
+    ],
+    "validator_path": "scripts/check_afp_interface_surface.py",
+    "rollout_note_path": "protocol-family/README.md",
+    "mirrored_from_zka": false
+  },
+  "purpose": "The citable, field-pinnable identity of AFP's current wire and interface surface. `interface_set_id` digests the identifier-granular interface surface: message classes, telemetry predicates, typed wire records, presentation profiles, published profiles, message subject subtrees, predicate status and public-input structure names, the session envelope identifier, the NATS subject root, and the composed ZKA, ZKC, and AFP-KDC versions. Prose fields are excluded from the digest preimage by construction, so editorial changes do not change the interface surface. `document_revision` identifies the current published specification document and is checked against its front matter; it is deliberately not referenced by the protocol-family manifest. See `digest_scope` for the field-content boundary and its separate gates.",
+  "digest_scope": {
+    "granularity": "identifier",
+    "covers": "The presence, identity and declared status of each interface element: message class ids and their section 12.4 subject subtrees; telemetry predicate ids, frozen/current status, and the NAME of each predicate's public-input structure; typed wire record ids; presentation profile ids; published profile names and their reference/experimental status; the session envelope identifier; the NATS subject root; and the ZKA/ZKC/AFP-KDC versions this specification composes with. This is exactly the scope of version_discipline.interface_change.",
+    "does_not_cover": "The FIELD CONTENT or canonical value mapping of the typed records themselves. Adding, renaming, reordering or retyping a field inside `interface AfpEnvelope { ... }` or `interface AfpInstanceAttestationPublicInputsV2 { ... }`, or changing how an AFP value is projected into a composed protocol's fixed-width field, leaves interface_set_id byte-identical because wire_records is projected to [id] and telemetry_predicates carries only the public-input structure's name. Do not read a green interface_set_id as evidence that no record field or cross-protocol value mapping changed.",
+    "field_content_is_gated_by": [
+      "tests/python/test_instance_attestation_spec.py::FROZEN_V2_PUBLIC_INPUTS -- byte-identical pin of the v2 public-input structure",
+      "tests/python/test_instance_attestation_spec.py::FROZEN_V1_ROW -- byte-identical pin of the frozen v1 catalog row",
+      "tests/python/test_instance_attestation_spec.py::FROZEN_ACCEPTED_ROOTS -- byte-identical pin of the v2 verifier-policy structure",
+      "tests/python/test_interface_surface.py::FROZEN_CREDENTIAL_ENVELOPE -- byte-identical pin of the native credential-envelope record body",
+      "tests/python/test_interface_surface.py::FROZEN_ENVELOPE -- byte-identical pin of the afp:envelope:v1 record body",
+      "tests/python/test_interface_surface.py::FROZEN_SESSION_ATOM -- byte-identical pin of the afp:session:v1 record body",
+      "tests/python/test_interface_surface.py::FROZEN_ZKC_PRESENTATION_CONTEXT_V1 -- byte-identical historical pin of the AFP-authored v1 ZKC presentation-context record",
+      "tests/python/test_interface_surface.py::FROZEN_ZKC_PRESENTATION_CONTEXT_V2 -- byte-identical pin of the current purpose-bound AFP-authored v2 ZKC presentation-context record",
+      "tests/python/test_interface_surface.py::FROZEN_PAYMENT_POLICY_V2 -- byte-identical pin of the afp:payment-policy:v2 record body",
+      "tests/python/test_interface_surface.py::FROZEN_PAYMENT_QUOTE_V2 -- byte-identical pin of the afp:payment-quote:v2 record body",
+      "tests/python/test_interface_surface.py::FROZEN_PAYMENT_RECEIPT_V2 -- byte-identical pin of the afp:payment-receipt:v2 record body"
+    ],
+    "why_not_digested": "Extending interface_set_id to cover the record bodies was considered and rejected for this phase. Those bodies are TypeScript blocks carrying inline `//` comments, so digesting them would pull prose back into the preimage -- the exact coupling this file exists to remove, one layer down and harder to see, because it would present as a cryptographic surface change. Byte-identical test pins catch a field addition without that hazard; they fail loudly and are re-blessed deliberately, in a test diff a reviewer reads."
+  },
+  "interface_version": "0.3.14-draft",
+  "interface_version_short": "v0.3.14",
+  "superseded_interface_versions": ["0.3.8-draft", "0.3.9-draft", "0.3.10-draft", "0.3.11-draft", "0.3.12-draft"],
+  "last_breaking_interface_version": "0.3.12-draft",
+  "document_revision": 57,
+  "published": "2026-11-20",
+  "family_epoch": "zka:protocol-family:2026-11-19.1",
+  "interface_set_id": "sha256:040269ba4b222b742d46faac2b82650894ab87707f104613620ac21f3fd427e5",
+  "interface_set_id_derivation": "sha256 over b\"afp:interface-surface:v1\" || canonical-JSON(preimage), where canonical JSON is UTF-8 with object keys sorted and no insignificant whitespace (RFC 8785 subset). The projection is IDENTIFIER-granular -- see `digest_scope` -- and preimage is exactly {\"composes_with\": {...}, \"envelope\": \"...\", \"message_classes\": [...], \"nats_subject_root\": \"...\", \"presentation_profiles\": [...], \"profiles\": [...], \"telemetry_predicates\": [...], \"wire_records\": [...]} built by PROJECTING each member to a fixed field list, with absent fields serialized as null: message_classes -> [id, subject_subtree]; telemetry_predicates -> [id, status, public_inputs_interface]; wire_records -> [id]; profiles -> [name, status]; composes_with -> [zka, zkc, kdc]. Array order is preserved as published. Every other field of this file is outside the preimage, including `interface_version`, `document_revision`, `family_epoch`, and prose fields such as purpose, note, notes, description, rationale, summary, reason, and spec_reference. The exclusion is by construction: the preimage whitelists sections, each member is projected to a whitelisted field tuple, scripts/check_afp_interface_surface.py refuses to digest prose-shaped field names, and it fails closed on any member key outside the digested and annotation partitions. Recomputed on every CI run by scripts/check_afp_interface_surface.py.",
+  "document_axis": {
+    "field": "**Document revision:**",
+    "location": "docs/afp_specification.md front matter",
+    "pinned_by_family": false,
+    "note": "The current editorial axis. It identifies the published specification document, must match the front-matter `**Document revision:**` line, and moves independently of the interface version and interface digest. Nothing in protocol-family/interface-manifest-v1.json references it; the checker rejects any such family pin."
+  },
+  "envelope": "afp:envelope:v1",
+  "nats_subject_root": "afp.{tenant}.{profile}",
+  "composes_with": {
+    "zka": "0.9.2-draft",
+    "zkc": "0.4.1-draft",
+    "kdc": "1.0.3"
+  },
+  "presentation_profiles": [
+    "zkc:presentation:anonymous:v1",
+    "zkc:presentation:linkable:v1",
+    "zkc:presentation:scoped:v1"
+  ],
+  "message_classes": [
+    {"id": "afp.session.open", "subject_subtree": "afp.{tenant}.session", "note": "Session establishment per AFP section 5.2."},
+    {"id": "afp.session.close", "subject_subtree": "afp.{tenant}.session", "note": "Session teardown per AFP section 5.2."},
+    {"id": "afp.work.request", "subject_subtree": "afp.{tenant}.work", "note": "Cross-tenant work request carrying the bilateral-agreement reference of section 5.5."},
+    {"id": "afp.work.result", "subject_subtree": "afp.{tenant}.work", "note": "Result carried as ZKA note(s) and/or a ZKA/Coord proof."},
+    {"id": "afp.disclose.request", "subject_subtree": "afp.{tenant}.work", "note": "Selective-disclosure or compliance-bundle request."},
+    {"id": "afp.disclose.response", "subject_subtree": "afp.{tenant}.work", "note": "Native credential-envelope for credential-only answers; substantive ZKA bundles may accompany transaction/Coord work."},
+    {"id": "afp.attest", "subject_subtree": "afp.{tenant}.work", "note": "Coordination attestation for a completed multi-step workflow."}
+  ],
+  "telemetry_predicates": [
+    {"id": "afp.telemetry.instance_attestation.v1", "status": "frozen", "public_inputs_interface": null, "note": "Frozen textually and semantically; its catalog row is pinned byte-identically by tests/python/test_instance_attestation_spec.py."},
+    {"id": "afp.telemetry.instance_attestation.v2", "status": "current", "public_inputs_interface": "AfpInstanceAttestationPublicInputsV2", "note": "Root-class-aware attestation with a byte-identical public-input structure pin."},
+    {"id": "afp.telemetry.build_currency.v1", "status": "current", "public_inputs_interface": null, "note": "Supported-build set membership."},
+    {"id": "afp.telemetry.compute_quota.v1", "status": "current", "public_inputs_interface": null, "note": "Self-attested consumption bound with a section 6.4 sample binding."},
+    {"id": "afp.telemetry.audit_log_integrity.v1", "status": "current", "public_inputs_interface": null, "note": "Self-attested append-only audit-log head."}
+  ],
+  "wire_records": [
+    {"id": "afp:anchor:v1", "note": "Optional L2 anchor of a bilateral commitment (section 12.6)."},
+    {"id": "afp:commitment:v1", "note": "Bilateral commitment primitive (section 12.6)."},
+    {"id": "afp:credential-envelope:v1", "note": "Native ZKC presentation and signed APR inside an authenticated encrypted AFP session; no ZKA bundle (section 12.7.2)."},
+    {"id": "afp:envelope:v1", "note": "The session envelope. AFP owns and retains its canonical X_ session digest; ZKA owns the carried bundle, whose field-valued session members use the section 5.2 BN254 projection (section 12.7)."},
+    {"id": "afp:instance-attestation-public-inputs:v2", "note": "Public statement of the v2 instance-attestation predicate (section 6.3)."},
+    {"id": "afp:introduction-offer:v1", "note": "Introduction Tier (section 14), experimental profile."},
+    {"id": "afp:introduction-request:v1", "note": "Introduction Tier (section 14), experimental profile."},
+    {"id": "afp:mixnet-directory:v1", "note": "Federation mixnet directory document (section 8)."},
+    {"id": "afp:payment-policy:v1", "note": "pay profile (section 15), experimental."},
+    {"id": "afp:payment-quote:v1", "note": "pay profile (section 15), experimental."},
+    {"id": "afp:payment-receipt:v1", "note": "pay profile (section 15), experimental."},
+    {"id": "afp:payment-policy:v2", "note": "pay_venue profile (section 15.9), experimental."},
+    {"id": "afp:payment-quote:v2", "note": "pay_venue profile (section 15.9), experimental."},
+    {"id": "afp:payment-receipt:v2", "note": "pay_venue profile (section 15.9), experimental."},
+    {"id": "afp:provisional-agreement:v1", "note": "Introduction Tier (section 14), experimental profile."},
+    {"id": "afp:publisher-key-state:v1", "note": "JCS record whose digest root_material_digest already carried for root:publisher-manifest (section 6.3.1)."},
+    {"id": "afp:rotation-presentation:v1", "note": "Identity-continuity rotation presentation (section 4)."},
+    {"id": "afp:session:v1", "note": "Bilateral session record retaining the exact section 5.2 X_ digest; field-valued ZKA consumers use its canonical nonzero BN254 projection (section 12.2)."},
+    {"id": "afp:telemetry-sample-binding:v1", "note": "Public-sample consistency binding (section 6.4)."},
+    {"id": "afp:witness-bootstrap:v1", "note": "Witness-set bootstrap record (section 4.5)."},
+    {"id": "afp:zkc-presentation-context:v1", "note": "Frozen historical AFP-side binding context for an accepted ZKC presentation (section 5.9)."},
+    {"id": "afp:zkc-presentation-context:v2", "note": "Current purpose-bound AFP-side binding context for an accepted ZKC presentation (section 5.9)."}
+  ],
+  "profiles": [
+    {"name": "work", "status": "reference", "spec_reference": "this specification, sections 5 and 12", "note": "The base behavior of the core, not a separate document."},
+    {"name": "prp", "status": "reference", "spec_reference": "PRP v0.2", "note": "Pairwise Reconciliation Protocol."},
+    {"name": "vxp", "status": "reference", "spec_reference": "VXP v0.2", "note": "Value eXchange Protocol."},
+    {"name": "afp.introduction", "status": "experimental", "spec_reference": "docs/afp_introduction_profile.md, section 14", "note": "Experimental until its lower layers are operational (section 14.9)."},
+    {"name": "pay", "status": "experimental", "spec_reference": "this specification, section 15", "note": "Experimental pending independent production-audit evidence for its Base settlement dependencies."},
+    {"name": "pay_venue", "status": "experimental", "spec_reference": "this specification, section 15.9", "note": "Venue-neutral payment profile; publication does not qualify a deployment or activate a route."}
+  ],
+  "version_discipline": {
+    "interface_change": "Adding, retiring or renaming a message class, telemetry predicate, typed wire record identifier, presentation profile, or published profile; changing the session envelope identifier or the NATS subject root; changing a predicate's frozen status or its public-input structure identifier; adding, removing, renaming, reordering or retyping a field of any typed `afp:*` wire record or public-input structure; changing a field's canonical encoding or its projection into a composed protocol's fixed-width input; or moving a composed-with version (ZKA, ZKC, or AFP-KDC). The identifier/composition group moves interface_set_id; field-level encoding and projection changes do not (see digest_scope) and require their explicit byte/value conformance pins instead.",
+    "rules": [
+      "Every interface change MUST move interface_version, except the single exhausted dependency-baseline exception enumerated in the next rule. An identifier-granular or composed-version change MUST also move interface_set_id. A change limited to record or public-input fields is detected by the byte-identical FROZEN_* pins and does not move the identifier-granular digest. last_breaking_interface_version identifies the current minimum AFP interface version that a family pin must cover.",
+      "Exhausted dependency-baseline exception: document revision 13 at epoch zka:protocol-family:2026-09-03.3 moves the composed ZKA target from 0.9.0-draft to 0.9.1-draft and moves interface_set_id while retaining AFP 0.3.10-draft, because the already-published canonical epoch pins that AFP version and an AFP version change would require another coordinated canonical epoch. This exception applies only to that exact transition and publication; it MUST NOT be reused for any later composed-version change.",
+      "A document-only change MUST move document_revision and the specification's `**Document revision:**` line, and MUST leave interface_version and interface_set_id unchanged without requiring a protocol-family action.",
+      "Correcting a reference implementation that emitted a value excluded by an already-published typed record does not change that record's interface when its identifier, field set, field order and field types remain byte-identical. The correction MUST reject the non-conforming value, document the rolling-upgrade consequence, and require a fresh message rather than silently translating unauthenticated data. Clarifying previously unspecified signature coverage over those same frozen fields follows the document axis; changing a previously specified signature preimage is an interface change.",
+      "The family manifest MUST pin AFP by at least the interface version. A pin on the specification's `**Version:**` header is accepted while it is the published form, but a json_pointer_equals on /interface_version plus /interface_set_id of this file is the intended form: it discriminates the surface rather than a line of prose.",
+      "The family manifest MUST NOT pin this file by whole-file sha256, in artifact_bindings or as a projection assertion. A file digest moves on prose edits and trains reviewers to re-bless a digest that moved for non-protocol reasons; interface_set_id excludes prose from its preimage by construction and does not.",
+      "The family manifest MUST NOT pin docs/afp_specification.md by whole-file sha256 either, in artifact_bindings or as a projection assertion. That document carries the document-revision axis, so a file digest on it re-couples every editorial edit to a family epoch action even while this file's own gate stays green -- the same defect one file over. text_contains assertions on stable normative strings in the specification remain acceptable; a whole-file digest does not. scripts/check_afp_interface_surface.py rejects both shapes on both paths.",
+      "interface_set_id is IDENTIFIER-granular and does not commit to the field content of the typed records (see digest_scope). A change to a record's fields is still an interface change under this section and still MUST move interface_version; it is detected by the byte-identical FROZEN_* pins in tests/python/, not by interface_set_id. A green interface_set_id is not evidence that no record gained a field.",
+      "The family manifest MUST NOT reference document_revision, the `**Document revision:**` line, or any document-revision label. Re-coupling the editorial axis to the family manifest reintroduces exactly the friction this file removes.",
+      "A family pin naming an interface version AFP has not published, or lagging last_breaking_interface_version, fails AFP's own gate: a breaking AFP interface change cannot be silently combined with an epoch pinned to an older surface."
+    ]
+  },
+  "family_pin": {
+    "declared_version": "0.3.14-draft",
+    "interface_version_label": {
+      "pinned": true,
+      "pinned_by": "assertion:afp-spec-version",
+      "form": "spec_header_text_contains",
+      "note": "The family discriminates AFP 0.3.14-draft by text_contains on the specification header while independently pinning the identifier-granular interface_set_id below."
+    },
+    "interface_digest": {
+      "pinned": true,
+      "pinned_by": "assertion:afp-interface-set-id",
+      "form": "surface_field_json_pointer",
+      "pin": {
+        "kind": "json_pointer_equals",
+        "path": "protocol-family/afp-interface-surface-v1.json",
+        "pointer": "/interface_set_id"
+      },
+      "note": "The canonical family pins /interface_set_id directly. It never pins this file or the specification by whole-file digest."
+    }
+  },
+  "consumer_gate": {
+    "description": "The checks AFP's own CI executes on every pull request, and that a downstream consumer's CI SHOULD execute against an AFP checkout before relying on AFP's interface surface.",
+    "commands": [
+      "python3 scripts/check_afp_interface_surface.py",
+      "python3 scripts/check_afp_interface_surface.py --self-test",
+      "python3 scripts/validate_protocol_family.py validate --repo afp --root .",
+      "python3 scripts/validate_kdc_conformance.py"
+    ],
+    "artifacts": [
+      "protocol-family/afp-interface-surface-v1.json",
+      "docs/afp_specification.md",
+      "docs/afp_opened_at_conformance_v1.json",
+      "schemas/afp-credential-envelope-v1.schema.json",
+      "docs/afp_native_credential_carriage_v1.json",
+      "docs/afp_session_stable_content_v1.json",
+      "docs/kdc_v1_0_3_domain_registry.json",
+      "protocol-family/poseidon2-operational-domains-v1.json",
+      "docs/pay_interaction_context_kat_v1.json",
+      "docs/payment_venue_v2_conformance.json",
+      "docs/payment_venue_v2_dispatch_conformance_v1.json",
+      "docs/kdc_v1_0_2_conformance_vectors.json"
+    ]
+  }
+}

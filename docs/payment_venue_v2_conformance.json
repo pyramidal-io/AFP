@@ -1,0 +1,66 @@
+{
+  "status": "synthetic schema conformance only; not a deployment or activation record",
+  "quote": {
+    "kind": "afp:payment-quote:v2",
+    "quote_id": "quote-venue-0001",
+    "session_ref": "session-0001",
+    "session_context": "X_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "policy_hash": "D_85ebb56ccfb833595347c701aebb71249d53d535af452fb4d1243a3b45af0cdd",
+    "obligation": {
+      "currency": "USD",
+      "amount_minor": "2500"
+    },
+    "settlement": {
+      "venue_profile": "zka:aztec:native-pay:v1",
+      "network_id": "aztec:conformance",
+      "anchor_chain_id": "eip155:1",
+      "asset_id": "eip155:1/erc20:0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+      "contract_instance_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "settlement_portal_id": "0x6666666666666666666666666666666666666666",
+      "manifest_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "recipient_id": "0x1414141414141414141414141414141414141414141414141414141414141414",
+      "amount_atomic": "10000000000000000",
+      "asset_risk_profile": "zka:asset-risk:s3-hard:v1"
+    },
+    "rate": {
+      "source": "bilateral:ethereum-weth-usd:v1",
+      "usd_minor": "250000",
+      "asset_atomic": "1000000000000000000",
+      "reference_usd_minor": "250000",
+      "reference_asset_atomic": "1000000000000000000"
+    },
+    "quoted_at": "2026-07-11T12:00:00Z",
+    "expires_at": "2026-07-11T12:05:00Z",
+    "max_slippage_bps": 100,
+    "quote_nonce": "0xabababababababababababababababababababababababababababababababab"
+  },
+  "canonical_quote_content": "{\"expires_at\":\"2026-07-11T12:05:00Z\",\"kind\":\"afp:payment-quote:v2\",\"max_slippage_bps\":100,\"obligation\":{\"amount_minor\":\"2500\",\"currency\":\"USD\"},\"policy_hash\":\"D_85ebb56ccfb833595347c701aebb71249d53d535af452fb4d1243a3b45af0cdd\",\"quote_id\":\"quote-venue-0001\",\"quote_nonce\":\"0xabababababababababababababababababababababababababababababababab\",\"quoted_at\":\"2026-07-11T12:00:00Z\",\"rate\":{\"asset_atomic\":\"1000000000000000000\",\"reference_asset_atomic\":\"1000000000000000000\",\"reference_usd_minor\":\"250000\",\"source\":\"bilateral:ethereum-weth-usd:v1\",\"usd_minor\":\"250000\"},\"session_context\":\"X_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"session_ref\":\"session-0001\",\"settlement\":{\"amount_atomic\":\"10000000000000000\",\"anchor_chain_id\":\"eip155:1\",\"asset_id\":\"eip155:1/erc20:0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0\",\"asset_risk_profile\":\"zka:asset-risk:s3-hard:v1\",\"contract_instance_id\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"manifest_hash\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"network_id\":\"aztec:conformance\",\"recipient_id\":\"0x1414141414141414141414141414141414141414141414141414141414141414\",\"settlement_portal_id\":\"0x6666666666666666666666666666666666666666\",\"venue_profile\":\"zka:aztec:native-pay:v1\"}}",
+  "quote_hash": "D_9f87a1401979e1f1005e532f994317d95123b181558af8681af15e0602a3a9df",
+  "interaction_context": "0x22faafc447ee7bafa35d9744fc7e19cc2cd4dbaf3ac060fe91fc9acc2ebcfa6f",
+  "policy": {
+    "kind": "afp:payment-policy:v2",
+    "deployment": {
+      "venue_profile": "zka:aztec:native-pay:v1",
+      "network_id": "aztec:conformance",
+      "anchor_chain_id": "eip155:1",
+      "asset_id": "eip155:1/erc20:0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+      "asset_commitment": "0x1515151515151515151515151515151515151515151515151515151515151515",
+      "contract_class_id": "0x1313131313131313131313131313131313131313131313131313131313131313",
+      "contract_instance_id": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "settlement_portal_id": "0x6666666666666666666666666666666666666666",
+      "manifest_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "fee_route": "aztec-protocol-fee-v1",
+      "receipt_profile": "zka:aztec:pay-receipt:v1",
+      "nullifier_semantics": "aztec-app-siloed-v1",
+      "max_note_value": "340282366920938463463374607431768211455",
+      "asset_risk_profile": "zka:asset-risk:s3-hard:v1"
+    },
+    "accepted_rate_sources": [
+      "bilateral:ethereum-weth-usd:v1"
+    ],
+    "max_quote_lifetime_seconds": 300,
+    "max_slippage_bps": 100,
+    "required_finality": "finalized"
+  },
+  "policy_hash": "D_85ebb56ccfb833595347c701aebb71249d53d535af452fb4d1243a3b45af0cdd"
+}

@@ -1,0 +1,2051 @@
+# Agent Federation Protocol (AFP) Specification
+
+**Version:** 0.3.14-draft
+**Interface version:** 0.3.14-draft
+**Document revision:** 57 (2026-11-20)
+**Status:** Draft Specification
+**License:** Apache 2.0
+**Domain:** AFP.dev
+**Date:** 2026-11-20
+
+**Canonical file:** `docs/afp_specification.md`
+**Specification set:** §11; machine-readable as `authority.specification_set` in `protocol-family/afp-interface-surface-v1.json`
+**Interface surface:** `protocol-family/afp-interface-surface-v1.json`
+
+> **Versioning axes.** This document carries two independent version axes, and they move independently.
+>
+> **Interface version** — AFP's wire and interface surface: the session envelope, the §5.3 message classes, the §6.3 telemetry predicates, the typed `afp:*` wire records, the §5.9 presentation profiles, the §13.3 published profiles, the §12.4 subject namespace, and the ZKA/ZKC/AFP-KDC versions this specification composes with. `**Version:**` above is its canonical spelling and is restated as `**Interface version:**`. It is the axis the protocol family pins, and it moves **only** when that surface moves. Its machine-readable form is `protocol-family/afp-interface-surface-v1.json`, whose `interface_set_id` digests the surface itself; `scripts/check_afp_interface_surface.py` re-derives every claim in that file from this specification on every CI run.
+>
+> **Document revision** — the editorial axis. It moves when published prose changes without moving the wire or interface surface. It is deliberately referenced by nothing in `protocol-family/interface-manifest-v1.json`; a revision that moves only this axis is not a protocol-family action and does not require an epoch change, snapshot re-vendor, or coordinated release.
+
+---
+
+## Abstract
+
+The Agent Federation Protocol (AFP) is the protocol layer for verifiable interaction between tenants. It defines how two tenants coordinate work across organizational boundaries, how an instance proves operational health to an operator without disclosing its work, and how an instance's identity survives a change of deployment topology or operator.
+
+AFP is a **protocol, not a profile** in the sense of §13.1: it is a wire contract between independent, mutually-distrusting implementations, and an AFP endpoint is any conforming agent-platform instance — not an instance of any one vendor's platform. ADAMAS is AFP's originating implementation and is cited throughout as a concrete example; nothing in this specification requires either endpoint to be an ADAMAS instance.
+
+AFP deliberately excludes third-party agent registration, capability-discovery feeds, marketplace task delegation, observation contribution, portable reputation, and protocol-level trust ladders. Section 1.2 states these current boundaries and the narrow constructs that AFP does permit.
+
+AFP rests on **KERI-aligned self-certifying identity**, **ZKA and ZKC as substrate** (with ZKM as an optional authorization peer), and **structural operator blindness**: end-to-end encryption protects tenant work content (OB-1), while the §8 routing properties protect the coordination graph (OB-2), subject to §8.1 and §8.10. Federation membership remains visible, mixing plus cover traffic mitigate but do not eliminate long-horizon statistical disclosure, especially in small federations, and a coalition of mix-node operators can directly trace every packet whose whole path it holds.
+
+This specification targets **ZKA v0.9.2-draft**, **ZKC v0.4.1-draft**, and **AFP-KDC v1.0.3**. ZKA carries substantive transaction or ZKA/Coord work-attestation proofs, optionally accompanied by profile-aware ZKC proofs, inside `zka:bundle:v1`. Credential-only exchanges use the AFP-native `afp:credential-envelope:v1` carrier (§12.7.2) without constructing a ZKA bundle. ZKC v0.4.1-draft supports anonymous, scoped, and explicitly-consented linkable presentation profiles; AFP selects among them per flow and binds every accepted proof to the KERI-authenticated presenter, credential-subject AID, APR signer, AFP session context, and authoritative AFP trust-flow purpose (§5.9). AFP-KDC v1.0.3 defines the external fixed-byte ownership boundary while reusing the v1.0.2 Poseidon2 parameter and conformance artifacts; it changes no KDC-owned tag, derivation, value, vector, hash, proof, circuit, verification key, or wire record (Appendix A). AFP inherits the six Freedom Safeguards defined normatively in ZKA §1.6, including Safeguard 6 (Verifier Accountability), which is load-bearing for unknown-counterparty federation.
+
+The machine-checked composition boundary is epoch `zka:protocol-family:2026-11-19.1` in ZKA's canonical `protocol-family/` package. It pins ZKM `0.1.0-draft (rev 13)` and statement-set identity `sha256:f367e0504bcbbe4ca2a150f9c56a7640d5ed21bdb9dec1c1ce4acaa6e023ab49` with its Nargo 1.0.0-beta.25 and Barretenberg 5.0.0 toolchain; AFP's native credential carrier is an additive interface extension whose schema and identifier-granular interface surface are pinned by this epoch. AFP vendors a commit-locked snapshot and rejects unknown, unmatched, or ambiguous version/profile combinations.
+
+Public release changes are recorded in the root `CHANGELOG.md` of each public snapshot.
+
+
+---
+
+## 1. Overview
+
+### 1.1 Design Goals
+
+1. **Tenant Federation**: Two tenants coordinate work across organizational boundaries with neither side revealing more than the work requires.
+2. **Operator Blindness**: Whoever operates an AFP transport can verify the platform is healthy without learning what tenants do, who they coordinate with, or what moves between them. This is structural, not policy.
+3. **Identity Continuity**: A tenant's identity, reputation relationships, and attestations survive a change of deployment topology or operator.
+4. **Substrate Reuse**: AFP defines *how* ZK-mediated interaction is initiated, authenticated, sequenced, and recorded. It does not reinvent the cryptography of ZKA, ZKC, or ZKM.
+5. **Freedom by Default**: The six Freedom Safeguards (ZKA v0.9.2-draft §1.6) hold across every AFP interaction.
+6. **Minimality**: AFP specifies only the protocol surface needed for the three relationships of §1.3. Anything expressible as tenant-internal behavior is not in the protocol.
+
+### 1.2 What AFP Is Not
+
+AFP does not define the following protocol surface. [AFP-0043] Conforming implementations MUST NOT add it under an AFP message, profile, registry, or transport extension.
+
+| Excluded concern | Current AFP rule |
+|---|---|
+| Agent manifest schema for third-party agents | Entity manifests remain inside the tenant; no record of that shape crosses the protocol boundary. |
+| Capability discovery or a marketplace feed | Exposure to a counterparty is negotiated bilaterally under §5 and is not advertised as a feed. |
+| Task delegation as a central wire protocol | Intra-tenant routing is tenant-internal; cross-tenant work requests use the specific §5 message class. |
+| Observation contribution from external agents | Observations originate only from tenant-internal entities. |
+| Individual-agent reputation accumulation | Trust is bilateral under §5.5 or per-interaction under §5.8; AFP carries no portable positive score. |
+| Trust-level escalation ladder | AFP has one trust level: *verified conforming instance under a verifier-accepted attestation authority* (§6.3.1). A verifier either accepts an authority or does not; neither root class nor authority creates a rank. Whether to require instance attestation is the verifier's own policy (§1.5.1, §6.3.1). |
+| HTTP bridge | Cross-instance traffic is between tenants on the common transport; AFP defines no HTTP-only third-party path. |
+| [AFP-0044] Operator-observed per-tenant telemetry | Per-tenant operator knowledge is proved under §6 and MUST NOT be learned by observing transport traffic (§3, §7). |
+
+[AFP-0045] Related behavior MAY exist as **tenant-internal implementation**, never as AFP wire protocol. [AFP-0046] In particular, a conforming implementation MUST NOT:
+
+- **Register third-party agents.** An entity is a principal only by delegation from the tenant that runs it: its AID is a delegated AID anchored in that tenant's KEL (§2.1, §4.2), and no other tenant can confer, register, or admit it. No AFP message registers, enrolls, or admits an agent across a tenant boundary; observations still originate only from tenant-internal entities; and intra-tenant dispatch remains tenant-internal (§5.6), never a wire delegation feature. A second tenant implementation is a *tenant*, never a registered agent.
+- **Publish discovery, marketplace, or capability-registry surface.** What a tenant exposes is negotiated bilaterally under §5 and is never advertised as a capability- or work-discovery feed — not to counterparties, operators, or a DGP gateway (§1.4.1). [AFP-0047] The OPTIONAL, opt-in willingness-to-federate directory of §14.1 is the sole permitted published record: it carries consent to be approached and a negotiating ceiling, never a work descriptor or open call. Conformance is asserted and verified per §6.3.1 under the verifier's own policy. AFP publishes no authority registry, list, or feed; accepted (root class, root authority) pairs live in the verifier's authenticated policy and the agreement or introduction policy that scopes an interaction (§5.5, §6.3.1, §14.4).
+- **Carry portable reputation.** Positive trust signals are per-agreement and bilateral (§5.5, §14.6): no score, rating, or conformance mark accumulates globally or substitutes for an agreement.
+- **Define a trust ladder.** AFP defines no escalating counterparty classes or privileged implementer class. The reference implementation and any named attestation authority hold no protocol privilege. Naming or shipping an authority in an implementation policy imposes no acceptance obligation and creates no standing that AFP can grant or withhold. A conformance shortfall is handled by §3.5 and §8.9 disclosure, never by creating a lesser tier of tenant.
+- **Provide an HTTP bridge.** All AFP traffic remains tenant ↔ tenant over the common transport (§2.3).
+
+Except for the constructs §14 expressly permits, surface with any of these effects is outside AFP regardless of its name.
+
+### 1.3 The Three Relationships
+
+AFP defines exactly three relationships, all between identifiable, cryptographically verifiable principals:
+
+1. **Tenant ↔ tenant** — two tenants, each running their own entities, collaborating across organizational lines. The protocol makes the interaction safe, verifiable, and minimally disclosing. "Federation" means two instances talking, never a third-party agent integrated into an instance. The two instances may be **known** to each other — joined by a pre-existing bilateral federation agreement (§5.5) — or **mutually unknown**, establishing trust per-interaction by ZKC compliance attestation (**open federation**, §5.8). Both are tenant↔tenant federation; they differ only in how trust is established, never in who the principals are.
+2. **Tenant ↔ operator** — the operator of a transport needs to know the platform is healthy without learning what tenants do. The protocol enforces that asymmetry structurally.
+3. **Identity continuity** — a tenant's identity and accumulated relationships survive a move between deployment topologies (managed transport ↔ self-hosted appliance) and a change of operator.
+
+### 1.4 Related Protocols
+
+| Protocol | Relationship |
+|---|---|
+| **ZKA** v0.9.2-draft | Settlement and coordination substrate. Tenant ↔ tenant work artifacts, attestations, and value transfers are ZKA notes and ZKA/Coord proofs. AFP defines the interaction envelope around them. ZKA normatively references the Key Derivation Core (Appendix A) for its key hierarchy and carries ZKA/Coord work-attestation proofs inside `zka:bundle:v1` (§12.7). The AFP↔ZKA dependency remains acyclic: ZKA depends only on Appendix A, which depends on nothing else in AFP (§2.2). |
+| [AFP-0048] **ZKM** v0.1.0-draft | Optional principal-issued spend-authorization layer. An AFP tenant's agent MAY exercise a ZKM mandate inside an AFP session, but AFP owns bilateral session policy while ZKM owns unilateral mandate state. Both constraints must pass independently; neither mutates or replaces the other. ZKM references AFP-KDC v1.0.3 for its seed/key-derivation model, retains the v1.0.2 cryptographic profile unchanged, and owns its additional `zkm/*` tags. |
+| **ZKC** v0.4.1-draft | Compliance substrate. Tenant ↔ operator telemetry and tenant ↔ tenant compliance claims are profile-aware ZKC proofs. AFP defines which claims are proved, their cadence, identity/session binding, accepted presentation profiles, downgrade rules, and failure semantics (§5.9). ZKC references AFP-KDC v1.0.3 for credential binding and owns the v1/v2 proof, rebind, APR, scope, pseudonym, and receipt cryptography. |
+| **KERI** | Identity substrate. AFP identities are self-certifying identifiers (AIDs) with KERI semantics and Key Event Logs (KELs), in the AFP encoding of §4.4.2, which is not KERI/CESR wire-compatible (§10). See §4. KERI semantics sit *above* the Key Derivation Core: KDC produces the seeds and the ZKA/ZKC keys derived from them; AFP §4 binds an AID to the entity that holds them. KEL signing keys are not KDC-derived (§4.4). |
+| **DGP** | Out of AFP scope except for the boundary rule in §1.4.1. A tenant may expose a DGP gateway to a third-party tool, but that gateway is not an AFP endpoint, does not receive an AFP discovery feed, and does not expand the AFP trust boundary. |
+| **PRP** v0.2 · **VXP** v0.2 | **AFP profiles, not peer protocols.** PRP (pairwise reconciliation) and VXP (value exchange) are named behaviors over AFP's Bilateral Session Core (§12); each adds its own atom kinds and state machine but reuses the core's session, identity binding, NATS namespace, dispute/arbiter model, commitment + optional-anchor primitive, session-envelope bundle, and Freedom-Safeguards application. See §13. |
+
+#### 1.4.1 DGP Gateway Boundary
+
+A tenant may expose a DGP gateway to a third-party tool, internal integration, or adjacent tenant-internal workflow. That gateway is a DGP surface controlled by the tenant; it is not an AFP endpoint and does not become part of AFP federation.
+
+The boundary is:
+
+- **No AFP discovery feed.** AFP does not publish tenant, counterparty, capability, route, profile, or telemetry discovery data to a DGP gateway. If a tenant wants a DGP tool to know about an AFP artifact, the tenant exports a tenant-scoped reference explicitly.
+- **No coordination-traffic visibility.** [AFP-0049] A DGP gateway MUST NOT receive AFP coordination traffic, mixnet route material, rendezvous handles, counterparty pairing data, session traffic timing, or any other data that would weaken OB-1 or OB-2 (§3).
+- **No trust-boundary expansion.** Trust in a DGP gateway is never transitive into AFP. A gateway credential, policy decision, or audit event does not authorize AFP session establishment, telemetry acceptance, KEL rotation, note migration, or profile commitment unless the AFP principal independently signs the AFP artifact required by this specification.
+- **Opaque provenance only.** [AFP-0050] A DGP gateway MAY carry opaque references to AFP session envelopes, work artifacts, PRP evidence, or VXP lifecycle atoms when the tenant intentionally exports them for provenance or audit. [AFP-0051] The reference MUST NOT include bilateral agreement contents, counterparty AID pairings, route state, telemetry private inputs, or mixnet metadata unless those fields are already visible to the tenant principal controlling the gateway.
+
+This rule keeps DGP gateways useful at tenant integration edges without creating AFP discovery, observation, or trust-score surfaces.
+
+### 1.5 Conformance Terminology
+
+[AFP-0052] The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, MAY, and OPTIONAL are to be interpreted as in RFC 2119 / RFC 8174.
+
+[AFP-0053] A **conforming AFP 0.3.14-draft implementation** MUST satisfy the protocol boundaries of §1.2 and §1.4.1, all applicable normative requirements of §3–§9 and §12, and the profile-conformance rules of §13.4, including all six Freedom Safeguards (ZKA v0.9.2-draft §1.6) as applied by §9 and §12.8. §14 applies when the implementation claims the `afp.introduction` profile; §15 applies when it claims `pay` or `pay_venue`, with each profile's requirements applying to that profile. Appendix A applies when the implementation derives keys using AFP-KDC. These conditions do not make an experimental profile operational: its activation gates and honest-disclosure requirements remain binding. [AFP-0054] A provision that is OPTIONAL or conditional retains that qualification within this scope.
+
+**Requirement identifiers.** Each sentence, list item, or table row of the specification set that contains one of these key words carries a stable identifier at its start: `[AFP-NNNN]`, or `[KDC-NNNN]` in AFP-KDC. An identifier names one statement. It does not change the statement's text or meaning, and it is never reused. `docs/afp_requirement_index.json` (format `afp:requirement-index:v1`) lists each identifier with its document, section, key words, conformance subject (`applies_to`: `implementation`, `tenant`, a profile name, or `kdc`), and status; a withdrawn identifier stays in the index. At document revision 50 the initial allocation was AFP-0043 to AFP-0499 for this document, AFP-0001 to AFP-0022 for the AFP Federation Mixnet, AFP-0023 to AFP-0042 for the `afp.introduction` profile, and KDC-0001 to KDC-0022 for AFP-KDC. Later changes add and withdraw identifiers, so these ranges are not the current set: the index, by its `document` and `applies_to` fields, is the authoritative locator.
+
+#### 1.5.1 The tenant conformance profile
+
+A **conforming AFP tenant** satisfies the **tenant conformance profile** stated below. The two conformance subjects are distinct: a conforming *implementation* is a codebase that satisfies §1.5's scope — the §1.2 and §1.4.1 boundaries, §3–§9, §12, §13.4, §14 and §15 for the profiles it claims, and Appendix A when it derives keys using AFP-KDC; a conforming *tenant* is a deployed runtime, addressed by its tenant root AID (§1.6, §2.1), that federates as a principal (§2.1) and discharges the applicable requirements of that same scope, including the six Freedom Safeguards and the tenant-side obligations enumerated here. The list groups those obligations; it does not replace that scope or introduce a separate wire surface. The profile and key-derivation conditions in §1.5 apply unchanged to the tenant's deployed behavior. ADAMAS, published by Pyramidal Inc., is the reference implementation of this profile; that attribution is a fact about one implementation, not a conformance gate, and publishing an implementation is unrelated to standing as an attestation authority (§6.3.1).
+
+[AFP-0055] A conforming tenant MUST satisfy all of the following:
+
+1. **KERI identity custody (§4).** [AFP-0056] The tenant MUST be identified by a tenant root AID governed by a KEL, with each entity a delegated AID whose inception is anchored in that KEL (§4.2). [AFP-0057] Pre-rotation is REQUIRED on every KEL event, and the tenant MUST reject a KEL whose rotation events do not honor prior pre-rotation commitments or whose events are not each signed by the key set that authorizes them (§4.4). [AFP-0058] The tenant MUST publish its witness set and threshold as part of its KEL, MUST check that every event of a counterparty's KEL carries receipts meeting the witness policy in force for it, and that every rotation also meets the policy it replaces, and MUST carry its witness configuration across a topology change (§4.5, §4.5.1, §4.5.2). [AFP-0059] Rotation and succession run as KEL events, and so does recovery wherever §4.6 defines it; tenant-root recovery after loss of the pre-rotated keys is an open item (§10); the tenant MUST NOT treat a KEL rotation alone as sufficient while notes or credentials derived from the old seed remain in use, and MUST publish the §4.6.1 rotation presentation when a rotation affects ZKA or ZKC material, under the sequencing and verifier rules of §4.6.2–§4.6.3.
+2. **Operator blindness and deployment topology (§3, §7.1, §7.3).** [AFP-0060] The tenant MUST deliver both OB-1 (content) and OB-2 (coordination graph); OB-1 alone does not satisfy the invariant (§3.1). OB is a capability standard, not a conduct standard: the operator must be *unable* to obtain the protected information (§3.2). [AFP-0061] The tenant MUST NOT route tenant↔tenant coordination traffic through a transport whose operator can correlate the endpoints (§3.3), and MUST NOT deploy in the topology §7.3 excludes — one in which an operator runs the transport that tenant↔tenant coordination traffic transits. [AFP-0062] Its OB-relevant behavior MUST be auditable (§7.1). [AFP-0063] Where OB-2 is not structurally satisfied, the tenant MUST NOT represent it as satisfied and MUST disclose the limitation (§3.5).
+3. **Routing participation, including cover traffic (§8).** [AFP-0064] The tenant MUST route coordination traffic through a layer that satisfies the §8.2 conformance properties, which are the conformance test (§8.1, §8.2). [AFP-0065] Constant-rate emission is REQUIRED, not optional: the tenant MUST emit coordination-plane traffic into its routing layer at a constant, scheduled rate at all times while federated, whether or not it has real coordination traffic to send, with real `afp.*` messages (§5.3) slotted into that stream (§8.5). [AFP-0066] Where the deployment uses the AFP Federation Mixnet, §8.4–§8.5 fix the packet form, the indistinguishability of cover from real packets, and a schedule derived from the active directory epoch and the tenant's local scheduler rather than from the presence of application work; missed cover slots are an OB-2 health failure and MUST be disclosed in operator telemetry without identifying counterparties (§8.5). [AFP-0067] An implementation MAY satisfy §8.2 by another construction, but it MUST satisfy §8.2, including an equivalent constant-emission property (§8). [AFP-0068] A tenant that does not emit at a fixed rate is not OB-2-conforming and MUST disclose this per §3.5.
+4. **The bilateral session core (§12).** [AFP-0069] Every AFP-mediated tenant↔tenant interaction the tenant takes part in MUST run inside a bilateral session (§12.1): exactly two principals, mutually authenticated under §4.4 event authorization and the §4.5 witness policies, end-to-end encrypted, metadata-private under §8, anchored to one of the three trust bases of §12.1, and context-bound. [AFP-0070] The tenant MUST carry the core's establishment, lifecycle, and timeout rules (§12.2), identity binding (§12.3), namespace ownership (§12.4), dispute and arbiter model (§12.5), commitment and optional-anchor primitive (§12.6), and session-envelope wire format (§12.7). [AFP-0071] Any bilateral profile the tenant runs MUST run over that core and MUST NOT re-derive or weaken it (§13.4). Tenant↔operator telemetry instead follows the authenticated channel of §6.1, the push model of §6.5, and the presentation policy of §5.9; it is not a bilateral profile (§12.4) and does not require a §12 tenant↔tenant session.
+5. **Operator telemetry (§6).** [AFP-0072] Toward any operator to which the tenant stands in the §6 tenant↔operator relationship, the tenant MUST supply operational assurance **only** as claims it proves — never by permitting observation of tenant work or the coordination graph (§6.1) — pushed by the tenant on a telemetry subject at the tenant's own timing (§6.5). [AFP-0073] Every such proof MUST use a registered predicate identifier and supported version from the §6.3 catalog at that predicate's stated cadence; a proof outside the catalog is not AFP-conforming. [AFP-0074] Every operator-facing catalog proof MUST bind the tenant AID, operator AID, predicate ID, predicate version, telemetry subject, telemetry window, and active ZKC presentation profile into the proof transcript (§6.3), and every self-attested predicate MUST carry the public-sample binding of §6.4. This surface is identical in every deployment topology (§6.7).
+6. **The six Freedom Safeguards (§9).** [AFP-0075] The tenant MUST satisfy all six Freedom Safeguards (ZKA v0.9.2-draft §1.6) as §9 applies them to AFP — predicate pluralism, minimal disclosure, no revocability, open-source predicates, agent exit rights, and verifier accountability — and as §12.8 applies them to every bilateral session. [AFP-0076] A profile the tenant runs inherits the §12.8 application and MUST NOT weaken any safeguard (§12.8, §13.4).
+7. **Tenant-internal obligations (§5.6, §5.7).** [AFP-0077] The tenant MUST contain, capability-scope, and observe its own entities; the mechanism is tenant-internal and outside AFP scope (§5.7). [AFP-0078] Routing an inbound work request to the correct entity within the tenant is likewise tenant-internal, and the tenant MUST keep that boundary: no AFP wire message carries a tenant's internal routing topology (§5.6). These are tenant-side duties discharged behind the tenant boundary; nothing in this item crosses the wire.
+
+The statements of this section, the tenant conformance profile, were AFP-0055 to AFP-0080 at document revision 50. The index entries whose `applies_to` is `tenant` are the current set; they also identify tenant duties that other sections state, for example §4.5 and §4.6.1.
+
+[AFP-0079] Where a provision cited above is itself OPTIONAL or conditional — open federation (§5.8), or §8's allowance for an alternative construction satisfying §8.2 — the profile inherits that condition unchanged and does not strengthen it. The profile confers no discovery, registry, reputation, or capability-publication surface of any kind (§1.2); it states what a tenant must satisfy, not what a tenant may advertise. [AFP-0080] A tenant that does not meet an OB-relevant obligation of this profile MUST NOT claim the corresponding property and MUST disclose the limitation under §3.5.
+
+A shortfall does not by itself end tenanthood or bar a session. Where §1.2, §12.1, §12.5, §13.1, and §5.8 speak of a *verified conforming instance*, of a *verified conforming instance under a verifier-accepted attestation authority*, or of *conforming tenants*, they state the standard each party is entitled to expect and to verify — not a protocol-level registry check, and not a requirement that every session carry an instance attestation. Whether a party requires instance attestation at all, and which (root class, root authority) pairs it accepts if it does, is that party's own policy (§6.3.1, Safeguard 1); the §12.1 trust bases include one — a pre-existing §5.5 agreement — that may require no attestation whatever. Acceptance remains each counterparty's own policy (§5.5, §5.8, §6.3.1, Safeguard 1): a tenant that has disclosed a shortfall under §3.5 or §8.9 remains a principal (§2.1), and whether a given counterparty opens or continues a session with it is that counterparty's decision. AFP defines no gate that excludes a non-conforming tenant from principalhood, and none that compels a counterparty to transact with one.
+
+Conformance to this profile is **asserted and bilaterally verified**, not certified: there is no conformance registry, mark, or published implementer list (§1.2), and a counterparty's acceptance of an implementation is its own policy decision (§5.5, §5.8, §6.3.1). An attestation root authority (§6.3.1) is **not** a conformance certifier: a root authority attests what build a machine subject runs, never that a tenant satisfies this profile. Accepting an authority is not accepting a conformance claim, and no authority — named in this specification or otherwise — certifies conformance. The formal multi-vendor conformance program — published tenant-profile vectors as a normative gate — is deferred (§10).
+
+### 1.6 Notation
+
+| Symbol | Meaning |
+|---|---|
+| `H(domain, x...)` | The AFP-KDC v1.0.3 interface using the exact §A.3 Poseidon2 sponge over BN254 with a field domain tag derived per Appendix A |
+| `AID` | Autonomic identifier: a self-certifying identifier with KERI semantics, in the AFP encoding of §4.4.2. Where this specification writes "KERI AID", it means an AID in this sense, never a KERI/CESR-encoded AID (§10) |
+| `KEL` | Key Event Log |
+| `M` | Tenant master seed (256 bits) |
+| `M'` | Per-entity sub-seed, `M' = HKDF(M, "entity/{name}")` |
+| `π` | A zero-knowledge proof (UltraHonk / BN254 unless stated otherwise) |
+| `dip` | KERI delegated-inception event |
+| [AFP-0081] `tenant` | A runtime that federates as a principal, addressed by its own tenant root AID; a tenant MUST satisfy the tenant conformance profile (§1.5.1) |
+| `entity` | A named domain multi-agent system within a tenant, addressed by a delegated AID |
+
+#### 1.6.1 Time-valued members
+
+The time-valued members of the registered typed `afp:*` records use three wire encodings. A field-specific normative sentence fixes a member's encoding. Where a record has none, the member's declared `datetime` type fixes it, and `datetime` is then the whole-second UTC string of §6.3.1. A member that another protocol owns keeps that protocol's encoding.
+
+- **UTC datetime string.** A JSON string of exactly 20 ASCII characters, `YYYY-MM-DDTHH:MM:SSZ`, naming a whole-second UTC instant: the date exists in the proleptic Gregorian calendar, the second field is `00`–`59`, `T` and `Z` are uppercase, and there are no fractional seconds and no numeric offset. Unless its row narrows it, the range is `0001-01-01T00:00:00Z` through `9999-12-31T23:59:59Z`.
+- **Unix-seconds integer.** A JSON integer token counting whole seconds since `1970-01-01T00:00:00Z`: unsigned base-10 digits with no leading zero, fraction, exponent, or sign. Its row gives its range.
+- **JSON number.** A finite number in the RFC 8785 number form. Its row gives its range.
+
+[AFP-0507] An implementation that produces or consumes a record in the table below MUST emit each present member that the table assigns to AFP in the encoding its row gives, and MUST reject a received member in any other encoding or outside its range, without rounding, coercing, or translating the value. An optional member that is absent stays absent, and a row marked unresolved is outside this rule.
+
+| Record | Member | Encoding | Range and order | Fixed by |
+|---|---|---|---|---|
+| `afp:witness-bootstrap:v1` (§4.5.1) | `issued_at`, `expires_at` | UTC datetime string | full range | declared `datetime` |
+| `afp:rotation-presentation:v1` (§4.6.1) | `presented_at` | UTC datetime string | full range | declared `datetime` |
+| `afp:rotation-presentation:v1` (§4.6.1) | `zkc_credential_rebind.public_inputs.timestamp` | the unsigned 64-bit integer of the ZKC rebind public-input ABI, in ZKC's native encoding | as ZKC defines it; `proof_public_inputs_hash` covers it in that native form | ZKC, which owns this public statement |
+| `afp:instance-attestation-public-inputs:v2` (§6.3.1) | `attestation_window.starts_at`, `attestation_window.ends_at` | UTC datetime string | `1970-01-01T00:00:00Z` through `9999-12-31T23:59:59Z`, because both endpoints are also exposed as unsigned 64-bit Unix seconds (AFP-0220, AFP-0221); `starts_at` before `ends_at` | declared `datetime`; AFP-0220 |
+| `afp:telemetry-sample-binding:v1` (§6.4) | `telemetry_window.starts_at`, `telemetry_window.ends_at`, `issued_at` | UTC datetime string | full range; a window that equals a v2 `attestation_window` (AFP-0206, AFP-0264) has that row's range | declared `datetime` |
+| `afp:session:v1` (§12.2.1) | `opened_at` | Unix-seconds integer | `0` through `253402300799` | §5.2 (AFP-0155) |
+| `afp:session:v1` (§12.2.1) | `expires_at`; `closed_at`, absent until a terminal state | UTC datetime string | `1970-01-01T00:00:00Z` through `9999-12-31T23:59:59Z`; `expires_at` strictly later than `opened_at` | §12.2.1 (AFP-0303 to AFP-0305) |
+| `afp:commitment:v1` (§12.6.1) | `signed_at` of each `AfpCommitSignature` | JSON number | any finite IEEE 754 binary64 value, in RFC 8785 number form; observational and outside the signature payload | AFP-0422 |
+| `afp:anchor:v1` (§12.6.2) | `block_timestamp` | UTC datetime string | full range | declared `datetime` |
+| `afp:envelope:v1` (§12.7) | `generated_at`, `expires_at` on the §12.7.1 completion path | JSON number | finite | §12.7.1 |
+| `afp:envelope:v1` (§12.7) | `generated_at`, `expires_at` on every other path | unresolved | the block declares `datetime`, while §12.7.1 gives JSON numbers for its path | unresolved in this revision |
+| `afp:credential-envelope:v1` (§12.7.2) | `generated_at`, `expires_at` | Unix-seconds integer | `1` through `9007199254740991`; generation before expiry, expiry within the session lifetime (AFP-0363) | declared positive whole-second Unix integer and `schemas/afp-credential-envelope-v1.schema.json` |
+| `afp:payment-quote:v1` (§15.2), `afp:payment-quote:v2` (§15.9) | `quoted_at`, `expires_at` | UTC datetime string | full range; `expires_at` strictly later than `quoted_at` | AFP-0409, AFP-0410 |
+| `afp:payment-quote:v1` (§15.2), `afp:payment-quote:v2` (§15.9) | `signed_at` of each quote signature | JSON number | as for `afp:commitment:v1`; inside `acceptance_record_hash` | AFP-0422 |
+| `afp:payment-receipt:v1` (§15.6), `afp:payment-receipt:v2` (§15.9) | `observed_at` | UTC datetime string | full range | §15.6 |
+| `afp:introduction-request:v1` (introduction §14.3) | `attestation_window.starts_at`, `attestation_window.ends_at` | UTC datetime string | `starts_at` before `ends_at`, both within the introduction session lifetime (AFP-0029); a window that a v2 proof copies (AFP-0030) has the v2 row's range | declared `datetime` |
+| `afp:provisional-agreement:v1` (introduction §14.4) | `signed_at` of both signatures | JSON number | as for `afp:commitment:v1` | AFP-0422 |
+| `afp:provisional-agreement:v1` (introduction §14.4) | `policy.accepted_credentials[].valid_until`, `policy.agreement_expires_at` | unresolved | the block declares `string`, which fixes no spelling | unresolved in this revision |
+| `afp:mixnet-directory:v1` (routing §8.7) | `valid_from`, `valid_until` | UTC datetime string | full range | declared `datetime` |
+
+The §12.6.1 block keeps the label `datetime` on `signed_at` until the next interface version; for that member the label does not mean the UTC datetime string. The records `afp:introduction-offer:v1`, `afp:payment-policy:v1`, `afp:payment-policy:v2`, `afp:publisher-key-state:v1`, `afp:zkc-presentation-context:v1`, and `afp:zkc-presentation-context:v2` have no time-valued member. A structure that is not a registered record but must equal one of these members, such as the §6.3.1 report-data record (AFP-0245), uses that member's row. Durations such as `max_quote_lifetime_seconds` and the routing profile's `*_seconds` members are not time instants and are outside this table.
+
+---
+
+## 2. Architecture
+
+### 2.1 Principals
+
+**Agent-platform instance (definition).** An **agent-platform instance** is one deployment of a multi-agent platform under a single administrative authority: it holds its own root AID and key material (§4), runs one or more entities on its own infrastructure, and is operationally independent of every other instance. AFP places **no** requirement on which platform an instance runs, on its internal architecture, or on its vendor — only that it satisfies this specification's normative requirements at the wire. [AFP-0082] Two federating instances MAY run different platforms, implementations, and product releases provided they implement a mutually compatible, pinned AFP interface/profile/substrate tuple; unknown, unmatched, or ambiguous tuples fail closed (§1.4). Where this specification names ADAMAS, it names AFP's originating implementation as a concrete example (§13.1); such a mention is never a conformance condition.
+
+AFP recognizes exactly three kinds of principal. All three are AIDs (§4); they differ only in role, never in identity machinery.
+
+- **Tenant.** [AFP-0083] A runtime that federates as a principal, identified by its own tenant root AID; a tenant MUST satisfy the tenant conformance profile (§1.5.1). The unit of federation. A tenant runs one or more entities. Tenanthood is a structural fact about what a runtime is, not a certificate of conformance: a tenant that falls short of an obligation is a **non-conforming tenant**, subject to the honest-disclosure regime of §3.5 and §8.9, never a non-principal. ADAMAS, published by Pyramidal Inc., is the reference implementation; the protocol names no implementer. §6.3.1 names a first attestation *authority*, which is a different thing: an authority is a party whose trust material a verifier may elect to accept, never a party entitled to implement, admit, or approve a tenant.
+- **Entity.** A named domain multi-agent system within a tenant (e.g. Viksana, Alochana). Identified by a delegated AID whose inception is anchored in the tenant's KEL. Entities are the principals that actually perform and attribute cross-tenant work; an AFP message that crosses a tenant boundary on behalf of an entity carries the entity's delegated AID.
+- **Operator.** Whoever runs an AFP transport. Identified by its own root AID, structurally identical to a tenant's. Operator status is an operational fact about who runs infrastructure; it confers **no** protocol-level privilege and **no** data path into tenant state (§3).
+
+HyperTalk sessions are **not** AFP principals. A HyperTalk session is a tenant-facing surface; when work must cross a tenant boundary, the entity is the principal, never the session. Within-tenant user identity is internal access control and outside AFP scope.
+
+A **§6.3.1 attestation root authority** is likewise **not** an AFP principal, and the enumeration above remains closed at three. An authority is an AID whose published trust material a verifier may elect to accept into its own verification policy; it addresses no AFP message, opens no session, holds no role under this section, and holds no protocol privilege. Its AID is ordinary KERI machinery (§4) used outside the principal roles, exactly as the AIDs of a mix node, a witness, or an external digest source are. Standing as an authority is neither a fourth principal class nor a tier of any of the three; where the same legal entity is also an operator, the roles are independent (§8.6).
+
+### 2.2 Layering
+
+```
++-------------------------------------------------------------+
+|                AFP 0.3.14-draft                           |
+|   - relationship envelopes (tenant<->tenant, tenant<->op)   |
+|   - identity continuity (KERI KEL exchange, witnesses)      |
+|   - metadata-privacy routing requirements                   |
++-------------------------------------------------------------+
+        |                  |                   |
+        v                  v                   v
++---------------+  +----------------+  +----------------------+
+| ZKA 0.9.2-draft|  |ZKC 0.4.1-draft|  |        KERI          |
+| notes, coord, |  | predicates,    |  | AIDs, KELs,          |
+| bundles       |  | proofs         |  | witnesses, rotation  |
++---------------+  +----------------+  +----------------------+
+        |                  |                   |
+        +------------------+-------------------+
+                           |
+                           v
+            +-------------------------------+
+            |  Key Derivation Core (KDC)    |
+            |  v1.0.3 -- AFP Appendix A:     |
+            |  master-seed derivation,      |
+            |  Poseidon2/BN254 domain tags, |
+            |  per-entity HKDF sub-seeds    |
+            +-------------------------------+
+                           |
+                           v
+            +-------------------------------+
+            |   Transport (NATS / leaf      |
+            |   nodes) + metadata-privacy   |
+            |   routing layer (§8)          |
+            +-------------------------------+
+```
+
+AFP sits above ZKA, ZKC, and KERI and below nothing — it is the top protocol of the federation stack. ZKM is a composition peer rather than a new AFP layer: it can constrain an agent's spend inside a session without replacing AFP policy or ZKA settlement. AFP never reimplements a primitive that ZKA, ZKC, ZKM, or KERI already defines; where this specification needs such a primitive it cites the owning specification.
+
+> **Note on the Key Derivation Core.** Master-seed derivation, the Poseidon2/BN254 field-tag scheme, and the per-entity HKDF sub-derivation used by ZKA, ZKC, ZKM, and AFP are specified once as the self-contained **AFP-KDC v1.0.3** module in Appendix A. KDC owns the six derivation tag strings. [AFP-0084] Each referencing protocol owns its operational tag strings and MUST derive their field constants with §A.3, except for the ZKA pool-adjacent fixed-byte fold tags carved out in §A.4. A dependent pins `AFP-KDC v1.0.3` without depending on any other AFP section, so the dependency graph remains acyclic.
+
+### 2.3 Transport
+
+AFP messages travel over a NATS-based transport (subjects, JetStream for durable streams, leaf nodes for cross-instance links). Transport selection is otherwise unconstrained. [AFP-0085] The transport is assumed **untrusted** for confidentiality purposes: §3 and §8 specify what the transport operator may and may not learn, and those guarantees MUST hold regardless of who runs the transport.
+
+AFP defines no HTTP bridge. All AFP traffic is between tenants speaking AFP over the common transport.
+
+---
+
+## 3. The Operator-Blindness Invariant
+
+This section is normative and central. It states the property that AFP is taken to promise: a tenant need not trust the operator, because the operator is structurally incapable of compromising tenant confidentiality.
+
+### 3.1 Statement
+
+**Invariant OB (Operator Blindness).** No operator of an AFP transport shall be able to learn, from operating that transport:
+
+1. the **content** of any tenant's work — work artifacts, payment amounts, counterparty identities, coordination payloads; or
+2. the **coordination graph** — which tenant is coordinating with which.
+
+OB-1 (content) and OB-2 (graph) are distinct properties with distinct mechanisms. [AFP-0086] A conforming implementation MUST deliver both. Delivering OB-1 while leaving OB-2 unmet — encrypted payloads over an operator-observable relationship graph — does **not** satisfy this invariant.
+
+OB-2 is scoped by the §8.2 routing properties, the §8.1 collusion bound and the §8.10 residual limitations: federation membership remains visible; long-horizon statistical disclosure is mitigated but not eliminated, especially in small federations; a coalition of mix-node operators can directly trace every packet whose whole path it holds; and inference and active attacks beyond that are not bounded. These limits apply to OB-2 claims throughout this specification, including the capability standard below.
+
+### 3.2 Capability, not conduct
+
+OB is a statement about **capability**, not conduct. An implementation satisfies OB only if the operator *cannot* obtain the protected information, not if the operator *chooses not to*. "The operator does not look" is not conformance. A design in which the operator could reconstruct the coordination graph by correlation — even if no operator ever does — fails OB.
+
+This follows the same discipline as ZKA Safeguard 3 (No Revocability): the absence of a capability, verifiable by inspection, rather than a promise of good behavior.
+
+### 3.3 Consequence for deployment topology
+
+OB has a hard consequence. Whoever runs a transport can observe that transport's traffic graph — connection metadata, timing, correlation of endpoints. Therefore, **an operator who runs the transport that tenant↔tenant traffic transits cannot, by §3.2, satisfy OB-2 for that traffic.** Payload encryption (OB-1) is achievable on an operator-run transport; relationship-graph privacy (OB-2) is not.
+
+AFP requires that the operator is **not on the coordination path**:
+
+- **OB-1 (content)** is delivered in every deployment by end-to-end encryption of all AFP payloads (§5.2) plus the substrate properties of ZKA and ZKC. The operator sees ciphertext envelopes, never contents.
+- **OB-2 (graph)** is delivered by the metadata-privacy routing layer of §8, within the limits of §8.1 and §8.10, under which no single transport operator — including the entity that publishes a tenant's implementation — observes an unobscured tenant↔tenant relationship.
+
+[AFP-0087] A conforming AFP deployment MUST NOT route tenant↔tenant coordination traffic through a transport whose operator can correlate the endpoints. [AFP-0088] Where the §8 routing layer is not yet available in a given deployment, that deployment MUST NOT claim OB-2 conformance and MUST disclose the limitation to its tenants (§3.5).
+
+### 3.4 Metadata is in scope
+
+OB-2 exists because encrypting content while leaking metadata is a known and unacceptable failure mode for a confidentiality platform. AFP treats the following as protected metadata, not merely the payloads they carry: the existence of a coordination session between two named tenants; the pairing of tenant AIDs in a session; the timing and volume correlation that would reveal such a pairing; and stable identifiers (NKeys, subject names) that would let an observer link a tenant across sessions. §8 specifies the routing requirements that protect these.
+
+### 3.5 Honest disclosure
+
+[AFP-0089] A deployment that delivers OB-1 but not OB-2 — for example, an interim deployment before the §8 routing layer is operational — is an honest-disclosure interim (§8.9), not a lesser class of tenant (§1.2), and it MUST be labeled as delivering OB-1 and not OB-2. [AFP-0090] An implementation MUST NOT represent OB-2 as satisfied unless it is structurally satisfied per §3.2. Claiming appliance-grade or routing-layer-grade confidentiality for a deployment that does not have it is a conformance violation, independent of any cryptographic correctness.
+
+The duty stated in this subsection is a duty of the party making the claim. Two of its addressees are AFP conformance subjects (§1.5): a **deployment** discloses the tier it actually delivers, as above, and an **implementation** that cannot support inspection of its OB-relevant behavior discloses that limitation rather than claiming OB (§7.1). A **§6.3.1 attestation root authority** is named here as a third addressee, but on a different footing, because an authority is not an AFP principal and not an AFP conformance subject (§1.5, §2.1): the character of its attestation is fixed by §6.3.1's class rules, and the duty to characterize it truthfully in published trust material is given normative effect as a **verifier acceptance condition** in §6.3.1 rather than as a conformance obligation this subsection could enforce. An authority that wants to be accepted discloses accordingly; nothing here binds a party AFP does not otherwise bind. This subsection is otherwise scoped to OB-1/OB-2 claims and neither imposes an OB obligation on an authority nor converts an attestation into an OB claim.
+
+---
+
+## 4. Identity
+
+AFP identity uses self-certifying identifiers with KERI semantics: self-certifying AIDs, pre-rotation, delegation, and witness receipts. These identifiers are encoded as §4.4.2 defines. That encoding is not KERI/CESR wire-compatible, so an AFP AID is not a KERI AID in the CESR sense (§10). This section is normative; hash-derived identifiers and flat `nkey_history` arrays are not AFP identity mechanisms.
+
+### 4.1 Why KERI
+
+A self-certifying identifier can be verified from the identifier and its Key Event Log alone, with no registry lookup and no dependency on any operator. Identity continuity across an operator change or a move to a self-hosted appliance (§1.3 relationship 3) therefore requires KERI semantics, which the AFP encoding of §4.4.2 carries; it is not optional.
+
+### 4.2 Identifier hierarchy
+
+AFP identity is a two-level KERI delegation tree per tenant, with a master-seed derivation beneath it.
+
+- **Tenant root.** Each tenant has one master seed `M`. The tenant root is an AID governed by a KEL. `M` is the tenant's root secret; the tenant root AID is the canonical identifier of the tenant across the federation.
+- **Entity (delegated AID).** Each entity within the tenant has a sub-seed `M' = HKDF(M, "entity/{name}")`. The entity is a **delegated AID** with KERI delegation semantics: its KEL opens with a delegated-inception (`dip`) event anchored in the tenant's KEL. The tenant approves every rotation of the entity, can revoke it, and replaces it by delegating a new AID, all by events in its own KEL (below).
+- **Operator.** An operator has its own root AID with its own master seed, structurally identical to a tenant. Operator privileges are operational only; per §3 they confer no protocol-level data path.
+
+**Delegation events.** The tenant states each delegation decision as an interaction (`ixn`) event in its own KEL, authorized and receipted like any other tenant event (§4.4, §4.5). The event's seal identifies the decision. In the §4.4.2 encoding a seal is the `D_` SHA-256 digest of the RFC 8785 (JCS) encoding of the object `{"delegate": <entity AID>, <kind>: <event digest>}`, where `<kind>` is `icp` for a delegated inception, `rot` for a delegated rotation, and `revoke` for a revocation (the last naming the entity's `dip` digest). [AFP-0091] Each kind has its own member name, so an anchor of one kind can never be read as another; any future encoding MUST keep the three kinds distinct.
+
+- **Anchoring.** An entity's `dip` event and each of its `rot` events are valid only once the tenant KEL carries an `ixn` anchoring that exact event. [AFP-0092] A verifier MUST reject an entity KEL with an unanchored inception or rotation. An entity's `ixn` events need no tenant anchor.
+- **Revocation.** A tenant revokes an entity by an `ixn` carrying the revocation seal for that entity's `dip`. [AFP-0093] A verifier MUST reject the entity as a principal of that tenant once the tenant KEL it verifies against carries the revocation, whatever the entity's own KEL contains. Revocation is permanent for that delegated AID, and later anchors do not reinstate it. Revocation concerns acceptance: verifiers decline new interactions with the entity. It does not act on notes, credentials, or any other tenant state (§9), and it does not void durable records the entity signed (§12.3).
+- **Witnessing.** An entity's events carry receipts under the entity's own witness policy (§4.5). Each entity establishment event is additionally covered by the tenant's witness policy, because the anchoring `ixn` is a tenant event that §4.5 requires the tenant's policy to receipt. A fork of an entity's key history therefore needs both a tenant signature and the tenant's witnesses.
+
+The anchoring and revocation rules also govern a signing AID delegated from an organizational authority (§6.3.1); for an authority, the pinned witness policy of §6.3.1 takes the place of the witnessing rule.
+
+Known-answer vectors (§4.4.2 encoding) for entity AID `E_` followed by 64 `1` digits and event digest `D_` followed by 64 `2` digits:
+
+| Seal kind | Seal |
+|---|---|
+| `icp` | `D_7b869511dbc172d4ae8467ca104a08bc3dea3b66e89ae6a151048d355d220946` |
+| `rot` | `D_9a599dea863942c1a6ed9dc2ae9c8707d8436756141e77d1742c71f1d2d2d289` |
+| `revoke` | `D_45b7745ee29a931d4b011b6995491450a007916fdcc6c5de4f5f1ec9b86a7fe8` |
+
+### 4.3 Relationship to ZKA and ZKC keys
+
+The master-seed derivation tree extends *below* the tenant root AID, and ZKA/ZKC keys derive from the **per-entity sub-seed**, not from the tenant master directly:
+
+```
+            Tenant master seed  M
+                     |
+                     |  tenant root AID  (KEL governed by witnesses)
+                     |
+        +------------+------------+
+        |                         |
+   M' = HKDF(M,              M' = HKDF(M,
+   "entity/viksana")         "entity/alochana")     ...
+        |                         |
+   delegated AID              delegated AID
+   (dip anchored in           (dip anchored in
+    tenant KEL)                tenant KEL)
+        |                         |
+   ZKA/ZKC key hierarchy      ZKA/ZKC key hierarchy
+   from M' per Appendix A     from M' per Appendix A
+   (KDC v1.0.3):              (KDC v1.0.3):
+     sk  = H("zka/spending", M')
+     vk  = H("zka/viewing", sk)
+     pk  = H("zka/proof", sk)
+     cbk = H("zkc/credential", M')
+```
+
+For each entity, the entity's sub-seed `M'` is the master-seed input to AFP-KDC v1.0.3 (Appendix A) — specifically to `deriveKeys` (the ZKA key hierarchy) and the credential-binding derivation (the ZKC `cbk` and private/global `holderCommitment`). The HKDF sub-derivation `M' = HKDF(M, "entity/{name}")` is itself defined by KDC §A.5. Consequently:
+
+- An entity's ZKA address and its ZKC `holderCommitment` derive along separate paths from `M'` and are unlinkable without `M'`, exactly as Appendix A requires — the §4.2 hierarchy does not weaken that property, it scopes it per entity.
+- Compromise of one entity's `M'` does not expose sibling entities: each `M'` is an independent HKDF output of `M` (Appendix A §A.5).
+- Cross-tenant work performed by an entity is attributable to that entity's delegated AID and is signed with the entity's current KEL signing key (§4.4), which is not derived from `M'`.
+
+### 4.4 Key Event Log
+
+Each tenant root and each entity AID has a KEL — an append-only, self-certifying log of inception, rotation, delegation, and interaction events. A flat key-history array is not a conforming substitute.
+
+[AFP-0094] Pre-rotation is **REQUIRED**, not optional. Every KEL event commits to the digest of the next key set (`next_key_digest`); a rotation event reveals the pre-committed next key and commits to the one after. [AFP-0095] An AFP implementation MUST reject a KEL whose rotation events do not honor prior pre-rotation commitments.
+
+**KEL key custody.** KEL signing keys, current and pre-rotated, are not derived from the tenant master seed `M` or from an entity sub-seed `M'`; Appendix A defines no such derivation. [AFP-0096] Each KEL key MUST be generated independently, or derived from a seed held apart from `M'` and from the current signing key, so that compromise of `M'` or of the current key reveals neither the current key nor the next. A pre-rotated key derivable from the online entity seed would fall with it and defeat pre-rotation. [AFP-0097] The pre-rotated private keys SHOULD be held offline until their rotation.
+
+**Event authorization.** The establishment events are inception (`icp`), delegated inception (`dip`), and rotation (`rot`); interaction (`ixn`) is the only other event type. A delegated AID's rotation is a `rot` in this section's terms (KERI encodes it as `drt`); its approval by the delegator (§4.2) is additional to the rules here. [AFP-0098] A KEL is self-certifying only if every event is authorized by the key state it extends, so every KEL event MUST carry controller signatures, each verified under §4.4.1, from the key set that authorizes it:
+
+- an `icp` or `dip` event is signed by the key set it establishes, meeting the signing threshold it declares;
+- [AFP-0099] a `rot` event is signed by the key set it reveals, and that key set MUST satisfy the `next_key_digest` of the latest preceding establishment event. [AFP-0100] The signatures MUST meet both the next-key signing threshold that establishment event committed to and the signing threshold the rotation declares. Only possession of the pre-rotated private keys authorizes a rotation; a signature by the key set being rotated away does not;
+- an `ixn` event is signed by the current key set, which is the key set of the latest preceding establishment event, meeting that event's signing threshold.
+
+[AFP-0101] The first event of a KEL MUST be `icp` or `dip`, with sequence number 0 and no prior-event digest. [AFP-0102] Every later event MUST be `rot` or `ixn`, with a sequence number one greater than its predecessor's and its predecessor's digest. Only an establishment event can set or change the current key set, the next-key commitment, the witness set, or the witness threshold. [AFP-0103] An `ixn` event MUST NOT change any of them; where its encoding carries one, the value MUST equal the latest establishment event's.
+
+A controller signature is an attachment over the event, not part of its digested content, so attaching it changes neither the event digest nor the AID. [AFP-0104] It MUST NOT be verifiable as a signature over any other payload an AFP key signs, such as the `D_` content digests of session atoms, envelopes, commitments, and quotes; §4.4.2 fixes the signed bytes so that it is not. [AFP-0105] A verifier MUST reject a KEL containing an unsigned or wrongly signed event, an event type in a position this section does not allow, or an `ixn` event that changes establishment state, and it MUST do so before relying on any key, commitment, seal, or witness policy that KEL carries.
+
+#### 4.4.1 Strict Ed25519 verification profile
+
+[AFP-0106] Every AFP path that verifies an Ed25519 signature — including KEL and witness receipts, session party references, channel attestations, commitments and dispute records, mixnet-directory quorum signatures, and payment-quote signatures — MUST apply the same strict acceptance profile. [AFP-0107] After decoding the canonical wire representation to octets, the public key `A` and signature point `R` MUST each be a canonical 32-byte Edwards25519 encoding and MUST each belong to the prime-order subgroup. [AFP-0108] The identity, every non-identity torsion point, every mixed-order point, a non-canonical `y >= 2^255 - 19`, and the non-canonical sign bit for `x = 0` MUST be rejected in either position. [AFP-0109] The scalar `S` MUST be a canonical 32-byte little-endian integer strictly less than the group order `L`. [AFP-0110] Only then may the verifier evaluate the Ed25519 equation with `k = SHA-512(R || A || message) mod L`; malformed input and any failed check MUST produce rejection, never coercion or a weaker verification path.
+
+[AFP-0111] Externally supplied Ed25519 public keys MUST also be validated against the same canonical and prime-order rules when they enter a KEL, witness-key map, mixnet directory, payment policy, or authority trust boundary. [AFP-0112] A production implementation MAY replace the reference arithmetic with an independently audited library, but its adapter MUST preserve every acceptance and rejection rule above and MUST pass the published AFP strict-verifier conformance cases before the deployment trusts it. An audit claim, matching key/signature lengths, or a library's default verification mode does not satisfy this requirement by itself.
+
+#### 4.4.2 KEL encoding
+
+This version of AFP defines its own KEL encoding. The encoding keeps KERI's semantics — self-certifying AIDs, pre-rotation, delegation, witness receipts — but it is not KERI/CESR wire-compatible, and KERI/CESR interoperability is an open item (§10). [AFP-0113] Every identifier, digest, and signed preimage that §4, §5.2, and §6.3.1 depend on is fixed here, and an implementation MUST produce and accept exactly these encodings.
+
+- **Qualified values.** A KEL qualified value is a one-letter derivation code, an underscore, and exactly 64 lowercase hexadecimal characters encoding 32 raw bytes: `E_` for an AID, `D_` for a SHA-256 digest, and `K_` for an Ed25519 public key. [AFP-0114] Uppercase hexadecimal, whitespace, a wrong length, and a code other than the one required by the field MUST be rejected, never normalized.
+- **Event content.** A KEL event is the JSON object with exactly these members:
+  - `ilk`: `icp`, `dip`, `rot`, or `ixn`;
+  - `sn`: a JSON integer token from 0 through 9007199254740991 (the exact JCS integer range); booleans and fractional tokens are invalid;
+  - `keys`: an array of `K_` keys, exactly one in this version;
+  - `next_key_digest`: a `D_` next-key commitment;
+  - `prior_dig`: the `D_` digest of the preceding event, or `null` at inception;
+  - `witnesses`: an array of distinct witness AID strings;
+  - `threshold`: an integer from 0 to the number of witnesses;
+  - `delegator_aid`: the delegating tenant root AID in a `dip`, otherwise `null`;
+  - `seal`: a `D_` value or `null` in an `ixn`, otherwise `null`.
+
+  [AFP-0115] All nine members MUST be present, including explicit `null` values; unknown or duplicate members MUST be rejected. Controller signatures, receipts, and observational timestamps are attachments, not content. The current and next signing thresholds are implicitly one: `keys` and the committed `next_keys` each contain exactly one key, and no `kt` or `nt` member is carried. Thus every signing-threshold obligation in §4.4 means one valid signature by the specified key; `threshold` is solely the witness receipt threshold. This version defines no multi-key or weighted controller signing.
+- **Event digest.** `D_` followed by the lowercase hexadecimal SHA-256 of the RFC 8785 (JCS) UTF-8 encoding of the event content.
+- **AID.** `E_` followed by the hexadecimal of the inception event's digest; the AID is the digest of its own inception content.
+- **Next-key commitment.** `D_` followed by the lowercase hexadecimal SHA-256 of the JCS encoding of `{"next_keys": [...]}`, whose array holds the lowercase hexadecimal of each next public key.
+- **Controller signature.** An Ed25519 signature (§4.4.1) over the ASCII bytes `afp:kel-event:v1`, one zero octet, and the ASCII event digest.
+- **Witness receipt.** An Ed25519 signature by the witness over the ASCII bytes `afp:kel-receipt:v1`, one zero octet, and the ASCII digest of the receipted event. This is the receipt §4.5 counts and the `afp:witness-bootstrap:v1` record carries.
+- **Delegation seals** use the §4.2 construction.
+
+[AFP-0116] Controller-signature and receipt signature values are exactly 128 lowercase hexadecimal characters encoding the 64 Ed25519 signature octets; uppercase, whitespace, and a wrong length MUST be rejected. A witness receipt associates exactly `witness_aid` (the witness's `E_` AID), `event_dig` (the receipted `D_` digest), and `signature` (those signature octets). [AFP-0117] The verifier MUST match the digest to the event and resolve the witness signing key under §4.5 before counting it. JSON attachment containers are outside the event-content digest; no attachment may override a content member.
+
+**Receipt preimage.** [AFP-0118] A witness receipt whose signature covers the bare ASCII event digest instead of the prefixed preimage above MUST be rejected; only a fresh witness signature over the prefixed preimage is accepted. [AFP-0119] Verifiers MUST NOT fall back to the bare-digest preimage or translate a receipt locally. Receipt attachments do not affect event digests or AIDs.
+
+Known-answer vectors. Each key is derived from a 32-byte Ed25519 seed consisting of one repeated octet. The tenant's current key uses seed `0x01` and its next key `0x02`; the entity's keys use `0x03`, `0x04`, and `0x05`; witness `W0` uses `0x10` and its next key `0x11`. `W0` is a label for the witness whose own threshold-zero `icp` yields the AID in the table (its remaining content members follow the same rules). The tenant inception names that literal AID in `witnesses` with threshold 1. The entity `dip` has no witnesses. The tenant `ixn` anchors that `dip`, and the entity `rot` reveals key `0x04` and commits to `0x05`. The `rot` row pins its digest; acceptance additionally requires a subsequent tenant `ixn` anchoring that rotation under §4.2:
+
+| Value | Encoding |
+|---|---|
+| witness `W0` AID | `E_67e9c77f75e721d6c1c8eae85cfc8af308ddf120a2c617367a3983f182cf8ce2` |
+| tenant current public key (raw hex; its `K_` value prefixes this) | `8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c` |
+| tenant `icp` next-key commitment | `D_7ded71128c638bea5b8be7e8541a6fdbd833f35179f3d0866131dfdd555dd0b8` |
+| tenant `icp` digest | `D_9b777f23304f8f09241614374e7830a8579e024196d5ef9f95f58a7d557f2761` |
+| tenant AID | `E_9b777f23304f8f09241614374e7830a8579e024196d5ef9f95f58a7d557f2761` |
+| tenant `icp` controller signature | `47c4280e6248bc42a15e1a09ec3080df4c29c8ba10800b2199cecc38aaa0439dd3849d00c58f5686374ffcefaba36bbf6990c17d5b3f6ce7ea1af4413015220c` |
+| `W0` receipt over the tenant `icp` | `6a3186c96b9a036b5239c9d0bed4ee92e813da02d9004b44e97e1b0f4d4d8f84a1b6551f8257346183ae9d67b3b183584b0c8f9909539d7e2d08f1f56b633b08` |
+| entity `dip` digest | `D_f818d386bd3cb7410d655afcd8abb9c26690ccf278fb12fb1e032d68e9f4da71` |
+| entity AID | `E_f818d386bd3cb7410d655afcd8abb9c26690ccf278fb12fb1e032d68e9f4da71` |
+| tenant `ixn` (delegation anchor) digest | `D_5147e46462a010de2d2d089ee25948866dc7a64056fd1a27f4ab088ed8b98104` |
+| entity `rot` digest | `D_8adc652636d833bfbfde538bb458e605b8a35188b2b345e23ebb35c5b37c71ed` |
+
+### 4.5 Witnesses
+
+Each tenant chooses a set of KERI **witnesses** that receipt its KEL events. Witnesses are the mechanism by which a counterparty — including an appliance with no access to the tenant's original operator — can verify that the tenant's key history is consistent and has not forked.
+
+- [AFP-0120] A tenant MUST publish its witness set and threshold as part of its KEL. Only establishment events set them (§4.4).
+- The **witness policy in force** for an event is the witness set and threshold of the latest establishment event at or before it. [AFP-0121] A verifying counterparty MUST check that every KEL event carries valid receipts from at least that policy's threshold of witnesses in that policy's set. A threshold that an interaction event declares is never the policy.
+- [AFP-0122] A rotation MUST also carry valid receipts meeting the threshold of the policy it replaces, from witnesses in that replaced set. A rotation that keeps the policy meets both requirements at once.
+- [AFP-0123] A witness MUST NOT receipt an event at a sequence number of a KEL for which it has already receipted a different event. Together with the previous rule, this lets the witnesses holding the prior key state refuse a forked rotation: without it, a holder of a superseded key could publish an alternative rotation naming a new witness set, or none. A KEL whose policy in force has threshold 0 gets no fork protection from witnesses.
+- Witness configuration travels with the tenant across a topology change: an appliance migration (§4.7) carries the witness set.
+
+**Current key state.** A KEL is evidence of key history, not of currency. Any prefix of a valid KEL is itself a valid KEL. A holder of a superseded key can therefore present the genuine, witnessed history that ends before the rotation away from it. Likewise, a tenant KEL cut short before a revocation `ixn` (§4.2) hides the revocation.
+
+- **Obtaining state.** [AFP-0124] Before live acceptance (§12.3), a verifier MUST obtain the counterparty's latest KEL state, for the tenant root and the entity, from at least `n − t + 1` of the `n` witnesses in the witness policy in force (threshold `t`), or from watchers the verifier itself chooses. Any event receipted under that policy is then held by at least one witness the verifier asks. The verifier follows each rotation to the policy it establishes. Each witness serves the events it has receipted. KEL material supplied by the counterparty, as in the §12.2 handshake, may advance retained state once verified, but it never establishes that the state is current.
+- **Retaining state.** [AFP-0125] A verifier MUST retain, for each AID, the latest KEL state it has verified. That includes a tenant KEL whose revocation of a delegation caused a rejection, which must not be forgotten. [AFP-0126] It MUST reject a later-presented KEL that is a strict prefix of that state (`kel_keystate_stale`).
+- **Divergence.** A presented KEL may depart from retained state by replacing an `ixn` with a `rot` signed by the pre-rotated keys, which is KERI's superseding recovery from a compromised current key. Such a KEL supersedes the retained state. Any other divergence is duplicity: the verifier keeps the state it verified first and rejects the divergent KEL. For an authority this is the unresolvable key state of §6.3.1.
+- **Threshold 0.** A KEL whose policy in force has threshold 0 has no witnesses to query. It gets neither currency nor fork protection beyond what the verifier has itself retained.
+
+Durable-record verification (§12.3) needs history rather than currency: a prefix that contains the pinned event suffices, but a fork is still rejected.
+
+Witnesses receipt KEL events only; they never see AFP work content and are not a data path under §3. A witness learns that a tenant rotated a key, not what the tenant does.
+
+#### 4.5.1 Witness bootstrap record
+
+A new tenant establishes its initial witness configuration with a **witness bootstrap record**:
+
+```typescript
+interface AfpWitnessBootstrap {
+  kind: 'afp:witness-bootstrap:v1';
+  tenant_aid: string;                    // tenant root AID being bootstrapped
+  kel_inception_dig: string;             // digest of the tenant root inception event
+  witness_set: Array<{
+    witness_aid: string;
+    witness_endpoint: string;            // transport endpoint for KEL receipts only
+    witness_kel_dig: string;             // latest witnessed event for the witness AID
+  }>;
+  threshold: number;                     // minimum receipts required for KEL acceptance
+  bootstrap_mode: 'managed-bootstrap' | 'bring-your-own';
+  bootstrap_issuer_aid?: string;         // optional candidate-set publisher, never a trust root
+  issued_at: datetime;
+  expires_at: datetime;
+  tenant_signature: string;              // tenant signs all fields above
+  witness_receipts: Array<{
+    witness_aid: string;
+    kel_event_dig: string;               // MUST equal kel_inception_dig
+    receipt: string;                     // KERI receipt over the inception event
+  }>;
+  bootstrap_issuer_signature?: string;   // optional signature over the offered candidate set
+}
+```
+
+[AFP-0127] The tenant root inception event MUST commit to the same `witness_set` and `threshold` carried in the bootstrap record. The bootstrap record is a convenience envelope for discovery and verification; the KEL remains authoritative. [AFP-0128] A conforming implementation MUST reject a bootstrap record whose signed fields do not match the tenant root inception event.
+
+`bootstrap_issuer_aid` is optional and advisory. [AFP-0129] In a managed deployment, an operator or consortium MAY publish a signed candidate set to help a tenant find witnesses, but the tenant chooses the witness set and signs the bootstrap record. The operator's signature is never a trust root and never substitutes for witness receipts.
+
+#### 4.5.2 Managed and appliance bootstrap paths
+
+Two bootstrap paths are conforming:
+
+- **Managed bootstrap.** The tenant selects witnesses from a managed or consortium-published candidate set, signs `afp:witness-bootstrap:v1`, obtains receipts from at least `threshold` witnesses over the tenant root inception event, and publishes the record with the KEL.
+- **Bring-your-own witness bootstrap.** An appliance tenant supplies its own witness AIDs and endpoints, signs `afp:witness-bootstrap:v1`, obtains the same threshold receipts, and publishes the record with the KEL. [AFP-0130] An appliance MUST be able to complete this flow without contacting the original managed operator.
+
+Both paths produce the same verifier-facing artifact. [AFP-0131] A counterparty MUST NOT distinguish their trust semantics: the only acceptance criteria are the tenant signature, the KEL/inception match, the declared threshold, and valid KERI receipts from the declared witnesses.
+
+#### 4.5.3 Verification and failure semantics
+
+[AFP-0132] A verifier that receives a tenant's initial KEL state MUST:
+
+1. verify the tenant root AID from the inception event;
+2. verify the `tenant_signature` over the bootstrap record;
+3. verify that `kel_inception_dig`, `witness_set`, and `threshold` match the inception event;
+4. verify that at least `threshold` receipts in `witness_receipts` are valid §4.4.2 witness receipts from AIDs in `witness_set` over `kel_inception_dig`;
+5. verify each witness AID against its own KEL state up to `witness_kel_dig`; and
+6. reject expired bootstrap records unless the same witness configuration is already established by later KEL events.
+
+Bootstrap failure has exactly one protocol consequence: the verifier treats the tenant identity as not yet established and declines AFP session establishment with that tenant. [AFP-0133] It MUST NOT trigger operator intervention, key revocation, note invalidation, or any change to tenant state.
+
+After bootstrap, a witness change is a rotation event (§4.4): the tenant publishes the new set and threshold in a `rot` event and obtains receipts under both the replaced and the new policy (§4.5). An interaction event cannot change the witness configuration. Appliance migration (§4.7) carries the current KEL and witness configuration; it is not a re-bootstrap unless the tenant intentionally changes its witness set.
+
+### 4.6 Rotation, recovery, succession
+
+Identity-lifecycle operations use the KEL:
+
+- **Rotation** is a standard KEL rotation event honoring the prior pre-rotation commitment.
+- **Recovery** (loss of the current keys) is a rotation by the pre-rotated keys, which pre-rotation exists to provide. A delegated entity that has also lost its pre-rotated keys is recovered through its tenant: the tenant revokes it and delegates a replacement AID (§4.2). [AFP-0134] Recovery of a tenant root that has lost both its current and its pre-rotated keys is an open item (§10); AFP defines no guardian or other third-party recovery event, and a verifier MUST NOT accept a key change for an AID except under the §4.4 event-authorization rules.
+- **Succession** (a tenant or entity handing control to a new principal) is a delegation or rotation event, depending on whether the AID identity is preserved.
+
+A master-seed rotation re-derives the entity's ZKA/ZKC keys, which orphans the credential binding (`cbk`) and any on-chain ZKA notes bound to the old keys. ZKC v0.4.1-draft owns both credential-side continuity primitives: scoped `zkc:proof:rebind:v2` exposes only old/new presentation pseudonyms plus their shared `scopeId`; the frozen `zkc:proof:credential_rebind:v1` exposes old/new global holder commitments and is therefore the explicitly-consented linkable profile. There is no anonymous rebind, because a rebind is a continuity claim. [AFP-0135] Issuer migration tokens MAY optimize integrations but do not replace the ZKC-Core proof. ZKA §5.7 owns note migration.
+
+AFP owns the upper-layer sequencing and presentation of those facts to counterparties. [AFP-0136] An AFP implementation MUST NOT treat the KEL rotation alone as sufficient when notes or credentials derived from the old seed remain in use.
+
+#### 4.6.1 Rotation presentation artifact
+
+[AFP-0137] When a tenant or delegated entity rotates a seed that affects ZKA or ZKC material, it MUST publish a rotation presentation:
+
+```typescript
+interface AfpRotationPresentation {
+  kind: 'afp:rotation-presentation:v1';
+  tenant_aid: string;
+  entity_aid?: string;                  // absent for tenant-root rotation
+  old_kel_event_dig: string;            // last accepted event before rotation
+  rotation_event_dig: string;           // KEL rotation event being presented
+  new_kel_event_dig: string;            // latest witnessed event after rotation
+  affected_material: Array<'kel' | 'zkc-credential-binding' | 'zka-notes'>;
+  presentation_profile: 'zkc:presentation:anonymous:v1' | 'zkc:presentation:scoped:v1' | 'zkc:presentation:linkable:v1';
+  zkc_credential_rebind?: {
+    proof_kind: 'zkc:proof:rebind:v2' | 'zkc:proof:credential_rebind:v1';
+    proof: string;
+    public_inputs: {
+      // scoped v2: the only holder-derived fields permitted
+      old_presentation_pseudonym?: string;
+      new_presentation_pseudonym?: string;
+      scope_id?: string;
+      // linkable v1: present only with explicit holder consent
+      old_holder_commitment?: string;
+      new_holder_commitment?: string;
+      presentation_profile: string;
+      issuer_id: string;
+      credential_schema_id: string;
+      context: string;                   // binds AID, KEL rotation, session, APR, profile, and active handles
+      timestamp: datetime;
+    };
+    proof_public_inputs_hash: string;    // hash of the ZKC-owned public statement above
+    issuer_migration_token?: string;     // optional optimization; not a substitute for the proof
+  };
+  zka_note_migration?: {
+    status: 'not-applicable' | 'complete' | 'pending-zka-draft';
+    proof_kind?: string;                // ZKA-owned when status is complete
+    proof?: string;
+    migrated_note_root?: string;
+  };
+  presented_at: datetime;
+  tenant_signature: string;
+}
+```
+
+The presentation artifact is an AFP envelope over KEL state plus lower-layer proofs. It does not define either ZKC circuit or the ZKA note-migration proof. [AFP-0138] Its handle surface is profile-exclusive: scoped v2 MUST omit both holder commitments; linkable v1 MUST omit scoped pseudonyms and `scope_id`; an anonymous flow that does not require continuity omits `zkc_credential_rebind` entirely and re-establishes the rotated credential as a fresh anonymous presentation.
+
+#### 4.6.2 Sequencing rules
+
+[AFP-0139] A conforming implementation MUST present rotation in this order:
+
+1. **Pre-rotation commitment.** [AFP-0140] The prior KEL event MUST already commit to the next key set (`next_key_digest`, §4.4). If the pre-rotation commitment is missing or not honored, the rotation is invalid.
+2. **KEL rotation.** The tenant publishes the KEL rotation event, obtains the declared witness-threshold receipts, and makes the witnessed KEL state available to counterparties.
+3. **Credential rebinding.** [AFP-0141] If `affected_material` includes `zkc-credential-binding` and the consuming flow requires continuity, the tenant MUST include scoped `zkc:proof:rebind:v2`, or linkable `zkc:proof:credential_rebind:v1` after explicit consent. [AFP-0142] The proof context MUST bind the entity AID, KEL rotation, AFP session, authenticated APR signer, active presentation profile, and exactly the active profile's handles. [AFP-0143] An issuer migration token MAY accompany the proof but MUST NOT replace it. [AFP-0144] Anonymous flows that do not require continuity MAY present the rotated credential as fresh and MUST NOT publish an old↔new link.
+4. **ZKA note migration.** [AFP-0145] If `affected_material` includes `zka-notes`, the tenant MUST include a `zka_note_migration` block. [AFP-0146] While ZKA §5.7 remains Draft, the only conforming unresolved status is `pending-zka-draft`; counterparties MUST treat notes bound to the old seed as not yet migrated for new AFP work, but MUST NOT invalidate, freeze, or redirect them. [AFP-0147] When ZKA finalizes the note-migration proof, `status: 'complete'` MUST carry the ZKA-owned proof and migrated note root.
+5. **Presentation binding.** The tenant signs the complete `afp:rotation-presentation:v1` artifact and presents it on the relevant tenant↔tenant or tenant↔operator channel before relying on the rotated material in a new AFP session, telemetry proof, or work bundle.
+
+#### 4.6.3 Verifier behavior
+
+[AFP-0148] A verifier MUST:
+
+1. verify the tenant or entity AID against the KEL chain through `new_kel_event_dig`;
+2. verify witness receipts for `rotation_event_dig` and `new_kel_event_dig` under §4.5;
+3. verify that `old_kel_event_dig` immediately precedes the rotation being presented;
+4. verify the tenant signature over the presentation artifact;
+5. when ZKC credential material is affected, require either **(a)** a valid profile-specific credential-rebind proof when the consuming flow requires continuity, or **(b)** the anonymous profile with no `zkc_credential_rebind` when continuity is unnecessary, treating the rotated credential as a fresh presentation and accepting no old↔new linkage; and
+6. require either no affected ZKA notes, `zka_note_migration.status == 'not-applicable'`, or a ZKA-owned completion proof before accepting rotated ZKA notes for new AFP work.
+
+Rotation-presentation failure has the same consequence as other AFP verification failures: the verifier declines the affected session, telemetry proof, or work bundle and emits an alert where applicable. [AFP-0149] It MUST NOT trigger operator intervention, credential revocation, note invalidation, or any mutation of tenant state.
+
+### 4.7 Appliance migration
+
+A tenant may move between deployment topologies — for example, from a managed transport to a self-hosted appliance. Because all entity sub-seeds derive from the tenant master seed `M`, **migration is one move**: relocating `M` re-derives every `M'` and therefore every entity's ZKA/ZKC key hierarchy. The KEL state and witness configuration move with the tenant, and so do the current and pre-rotated KEL signing keys, which are not derived from `M` (§4.4) and must be carried with the same custody. No counterparty relationship, attestation, or identifier changes as a result of the move — which is the point of choosing self-certifying identity in §4.1.
+
+---
+
+## 5. Tenant ↔ Tenant Federation
+
+This section specifies the first relationship: two tenants coordinating work across organizational boundaries.
+
+> **Relationship to the Bilateral Session Core (§12).** Section 12 is the canonical, normative home of the session, identity, dispute, commitment, bundle, and safeguard machinery reused by the §13 profiles. This §5 specifies AFP's **base behavior**, direct tenant↔tenant work exchange, over that core. Where §5 and §12 describe the same construct, §12 states the shared profile-facing rule and §5 applies it to work exchange.
+
+### 5.1 Model
+
+A tenant↔tenant interaction is a **bilateral, ZKA-mediated work exchange** between two entities, one in each tenant. It is *not* a marketplace transaction: there is no discovery feed, no open call, no solver. The protocol's job is to make the exchange verifiable and minimally disclosing once the two counterparties are in contact.
+
+Trust between the two tenants rests on **one of two bases**:
+
+- **Known counterparty (bilateral path).** The two tenants hold, or establish, a bilateral federation relationship (§5.5).
+- **Unknown counterparty (open-federation path, §5.8).** The two tenants have no prior agreement and establish trust **per-interaction** by mutual ZKC compliance attestation. Each party answers the other's Authenticated Proof Request with a ZKC compliance bundle; acceptance is each party's own policy.
+
+In both cases the counterparty is a specific, identified principal by the time a session is established — open federation removes the *prior-agreement* assumption, not the *identified-principal* one. What AFP does **not** provide in either case is *discovery*: how two strangers find each other and route first contact is out of scope (§8.8), because a queryable directory of tenants would itself be the coordination graph (§3).
+
+A typical exchange: an entity in tenant A (e.g. Viksana) needs an analysis run by an entity in tenant B; B performs the work; the result returns to A. Neither side reveals more than the work requires.
+
+### 5.2 Session establishment
+
+A tenant↔tenant session is established between two entity AIDs:
+
+1. **Address resolution.** The initiating entity resolves the counterparty *tenant* AID (not the entity AID) to a transport route via the §8 routing layer. The protocol addresses tenants; routing a request to the correct entity inside the receiving tenant is tenant-internal (§5.6).
+2. **Mutual authentication.** Each side verifies every event of the other's KEL under §4.4 event authorization and against the witness policies §4.5 requires for it, judged against current key state obtained and retained as §4.5 requires. Authentication is of the *entity* delegated AID, with its delegation chain verified up to the *tenant* root AID.
+3. **Channel encryption.** The session establishes an end-to-end encrypted channel between the two entities. All subsequent AFP payloads on the session are ciphertext to any transport operator (OB-1, §3.3). Each entity contributes a fresh ephemeral X25519 key pair to every channel establishment. [AFP-0150] Its private scalar MUST be drawn from a cryptographically secure random source for that establishment alone. [AFP-0151] It MUST NOT be derived from `M'`, from any other long-term key or seed, or from any value carried on the wire, and it MUST NOT be transmitted. [AFP-0152] Each endpoint MUST erase its scalar once the channel's traffic keys are derived, and MUST erase the traffic keys when the channel closes. The entity's long-term keys only authenticate the ephemeral public key: its KEL-current Ed25519 key (§4.4), which is not derived from `M'`, signs it together with the session binding and contributes nothing else to key agreement.
+
+   **Forward secrecy.** A completed channel's traffic keys depend on ephemeral secrets that no party retains. A later compromise of either entity's `M'`, its KEL signing keys, or its tenant's master seed `M` therefore does not expose that traffic, even to an observer that recorded the entire session. The property has limits. An attacker who obtains an endpoint's ephemeral scalar or traffic keys before they are erased reads that channel. An attacker who holds an entity's KEL-current signing key before an establishment can impersonate that entity in new sessions until the key is rotated (§4.6).
+4. **Context binding.** The session context binds every proof and message in the session to its two entity AIDs, session ID, and opening second. Together with the §12.2.1 uniqueness rule, which makes each context name exactly one responder-signed session, it prevents replay to another session or counterparty. The AFP session atom, envelope, and presentation-context preimage retain exactly the following readable qualified digest. ZKA's BN254-valued bundle, transaction, binding, and Coord context slots receive the canonical field projection defined immediately below; a current ZKC presentation instead receives the distinct purpose-bound §5.9 proof context.
+
+   ```text
+   timestamp = RFC3339_UTC_whole_second(opened_at)
+   preimage = RFC8785_JCS_UTF8({
+     "initiator_entity_aid": initiatorEntityAID,
+     "responder_entity_aid": responderEntityAID,
+     "session_id": sessionId,
+     "timestamp": timestamp
+   })
+   session_context = "X_" || lowercase_hex(SHA-256(preimage))
+   ```
+
+   Let `session_digest` be the exact 32 bytes encoded after `X_`, let `OS2IP` read those bytes as one unsigned big-endian integer, and let `r = 21888242871839275222246405745257275088548364400416034343698204186575808495617`, the BN254 scalar-field modulus. The ZKA session-context projection is `OS2IP(session_digest) mod r`, serialized as exactly `0x` plus 64 lowercase hexadecimal digits including leading zeroes. [AFP-0153] It MUST be nonzero and strictly less than `r`. [AFP-0154] A zero projection, malformed or alternate prefix, non-lowercase or wrong-width encoding, noncanonical field value, or mismatch MUST fail closed; implementations MUST NOT retry, rehash, normalize, substitute, or fall back. The envelope retains the original `X_` value, and this deterministic reading into ZKA's field is not a second session context. It is the same big-endian mod-`r`, reject-zero seam used by §15.4.
+
+   `opened_at` is a signed-wire **RFC 8785/JCS JSON integer number**, not a JSON string, with the inclusive range `0..253402300799`. Its canonical wire token is unsigned base-10 decimal: `0`, or a nonzero digit followed only by decimal digits; an exponent, decimal point, sign, leading-zero form, or any other representation is noncanonical. It maps exactly to UTC `1970-01-01T00:00:00Z` at `0` and UTC `9999-12-31T23:59:59Z` at `253402300799`; every intermediate value maps to its exact whole-second RFC 3339 UTC form `YYYY-MM-DDTHH:MM:SSZ`. The upper bound is less than `2^53`, so every permitted value is exactly representable as an IEEE-754 JavaScript number. [AFP-0155] Implementations MUST reject every other JSON type, every fractional, negative, out-of-range, or noncanonical token, and MUST NOT round or coerce while parsing or recomputing a received context. The four preimage members are strings, their names are fixed ASCII, and the JCS bytes above contain no insignificant whitespace. `X_` is AFP's readable qualified-digest form, not a CESR encoding. [AFP-0156] A recipient MUST verify the initiator signature over the proposal's stable content (including `session_context`), authenticate the proposal's responder binding as §12.2.1 requires, then recompute this value from those authenticated party bindings and reject a mismatch before accepting the session. Equality proves that the responder entity AID was committed by the initiator-signed context; a different responder cannot satisfy it.
+
+   [AFP-0157] The following vector is normative and MUST reproduce exactly:
+
+   ```text
+   initiatorEntityAID = "E_i"
+   responderEntityAID = "E_r"
+   sessionId          = "sess-1"
+   opened_at          = 1700000000
+   timestamp          = "2023-11-14T22:13:20Z"
+   preimage           = {"initiator_entity_aid":"E_i","responder_entity_aid":"E_r","session_id":"sess-1","timestamp":"2023-11-14T22:13:20Z"}
+   session_context    = X_eddb6ad038bd9a1a79c6c1d29ebd7461da0383948b7e6c13dadd6553b97e4a7f
+   zka_bundle_context = 0x2c4a3104b3f719739885aaf898b812ed3933e272a498a9cecb558f03f97e4a7b
+   ```
+
+   `docs/afp_opened_at_conformance_v1.json` is the normative machine-readable conformance fixture for this rule. [AFP-0158] Every conforming runtime MUST accept and reproduce both `session_context` and `zka_bundle_context` for its `min`, `published`, and `max` vectors and MUST reject every listed rejected value or raw JSON token without rounding, coercion, alternate timestamp formatting, or alternate field mapping.
+
+**Open-federation variant (§5.8).** For an unknown-counterparty session the entity AIDs are not drawn from a pre-existing agreement; they are the **attested identities established at first interaction** (the ZKC verifier/holder identities each party authenticates under §5.8). Steps 2–4 are otherwise unchanged: the same KEL verification (step 2), the same channel encryption (step 3), and the same context-binding hash (step 4) over those attested AIDs — with each ZKC attestation bound to that authenticated session through the §5.9 purpose-bound proof context. The binding *shape* is identical; only the *provenance* of the two AIDs differs (attested-at-first-contact vs. carried-in-agreement).
+
+### 5.3 Message classes
+
+AFP defines a deliberately small set of message classes for the tenant↔tenant session. All are carried inside the encrypted channel of §5.2. These are the message classes of the **base work-exchange behavior**; under the canonical NATS namespace of **§12.4** they are addressed as leaves of the base profile's subtree, `afp.{tenant}.work.*` (with `afp.{tenant}.session.*` for the lifecycle classes). The bare names below are used for readability; §12.4 is normative for their full tenant-scoped addressing.
+
+| Class | Purpose |
+|---|---|
+| `afp.session.open` / `afp.session.close` | Establish / tear down a session per §5.2 |
+| `afp.work.request` | An entity requests cross-tenant work. Carries a work descriptor and the requester's bilateral-agreement reference (§5.5). |
+| `afp.work.result` | The performing entity returns a result, carried as ZKA note(s) and/or a ZKA/Coord proof (§5.4). |
+| `afp.disclose.request` / `afp.disclose.response` | One side requests, and the other provides, a selective disclosure or compliance bundle (§5.4, §6.1). |
+| `afp.attest` | An entity contributes a coordination attestation (ZKA/Coord proof) for a completed multi-step workflow. |
+
+There is no `afp.register`, no `afp.discover`, no `afp.delegate` as a marketplace primitive. Work requests are a message inside an already-established bilateral relationship, not an open call.
+
+### 5.4 Work artifacts ride on ZKA
+
+Cross-tenant work artifacts, attestations, and value transfers are **ZKA constructs**; AFP carries them and defines their interaction envelope but does not redefine them.
+
+- **Value transfer** between tenants (e.g. payment for work performed) is a ZKA/Pay transfer (ZKA v0.9.2-draft §3): the payment is a ZKA note, amounts and parties hidden from observers. When principals price an obligation in USD but settle it in WETH, the AFP `pay` profile (§15) binds the exact signed quote to the ZKA payment; ZKA does not interpret USD or choose a price.
+- **Verifiable multi-step work** is attested with ZKA/Coord recursive coordination proofs (ZKA v0.9.2-draft §4): an `afp.attest` message carries a `CoordinationProof` proving that an N-step workflow executed correctly without revealing the step inputs. AFP's `context` (§5.2) is bound into the proof's `context` public input.
+- **Selective disclosure** — proving a property of a work artifact or balance without revealing it — uses ZKA/Pay selective-disclosure circuits (ZKA v0.9.2-draft §6). Each disclosure is atomic (one property per proof) per Safeguard 2.
+- **Compliance** — where one tenant requires the other to prove a compliance property as a condition of the interaction — uses native atomic ZKC v0.4.1-draft presentations: `zkc:proof:v2` for anonymous/scoped presentations or frozen `zkc:proof:v1` for an explicitly-consented linkable presentation. A credential-only `afp.disclose.response` uses `afp:credential-envelope:v1` (§12.7.2). [AFP-0159] When compliance accompanies a substantive transaction or Coord proof, it MAY instead use the unchanged ZKA Compliance Bundle (`zka:bundle:v1`, ZKA §5.4) inside `afp:envelope:v1`. Both paths apply the same §5.9 flow policy and AID/session/purpose binding. A bundle with neither transaction nor Coord proof is invalid (`EMPTY_BUNDLE`), however many compliance proofs it contains.
+
+A tenant↔tenant compliance requirement is an **interaction-boundary** concern (Safeguard 5): it may cause the requesting tenant to decline the interaction, and nothing more. [AFP-0160] It MUST NOT gate either tenant's access to its own funds or notes, and a failed bundle verification has exactly one permitted consequence — the counterparty declines — per ZKA v0.9.2-draft §5.4 and Safeguard 3.
+
+### 5.5 Bilateral federation agreements
+
+AFP does **not** define individual-agent reputation or a portable positive reputation score. Trust on the known-counterparty path is a **bilateral federation agreement**: an explicit, mutually signed record that two tenant AIDs have agreed to federate, optionally scoped by entities, work classes, and compliance requirements.
+
+- A federation agreement is signed by both tenant root AIDs and referenced by `afp.work.request` messages.
+- Agreement scope is bilateral and private to the two tenants; it is not published or discoverable.
+- The progressive signal used by §14.6 is scoped to one agreement and does not become a portable score, rating, or conformance mark.
+- [AFP-0161] Requiring instance attestation on this path is **OPTIONAL**. [AFP-0162] Where an agreement's compliance requirements include `afp.telemetry.instance_attestation.v2`, the agreement MUST name the (root class, root authority) pairs each party accepts, with the semantics and verifier obligations of §6.3.1; the §14.4 `accepted_instance_attestation_roots` shape is the reference encoding. An agreement that does not require the predicate names no authority, and the absence of a named authority never selects one by default. Like every other term of the agreement, the accepted pairs are private to the two tenants and are neither published nor discoverable (§1.2).
+
+The bilateral federation agreement is the trust basis for the **known-counterparty** path. Two tenants with no prior agreement may instead establish trust **per interaction** by ZKC compliance attestation under the **open-federation** path of §5.8. Both paths are bilateral and private; neither creates a portable reputation score. Where this section says "the agreement," an open-federation session substitutes the per-interaction attestation and its policy block.
+
+### 5.6 Internal routing boundary
+
+When an `afp.work.request` arrives addressed to a tenant, routing that request to the correct entity within the receiving tenant is **tenant-internal and outside AFP scope**. The protocol sees tenant AIDs as session endpoints and entity AIDs as the principals named inside the encrypted channel; it does not see, and does not specify, how a tenant dispatches an inbound request across its own entities. [AFP-0163] A conforming implementation MUST keep this boundary: no AFP wire message carries a tenant's internal routing topology.
+
+### 5.7 Rogue-agent threats are out of scope
+
+A compromised or misbehaving entity *inside* a tenant operates with that tenant's legitimate keys and legitimate access. [AFP-0164] Protecting a tenant against its own rogue entity is a containment, capability-scoping, and observability problem handled **within** the tenant: a conforming tenant MUST contain, capability-scope, and observe its own entities (§1.5.1 item 7), and the mechanism is tenant-internal. ADAMAS, the reference implementation, discharges this through policy enforcement, per-entity capability scoping, and the Drasta observability entity acting on the tenant's behalf. It is explicitly **not** an AFP concern. [AFP-0165] AFP's guarantees — operator blindness, federation verifiability, identity continuity — MUST NOT be read as covering an internal rogue agent. This boundary is stated so that conforming implementations do not conflate the two.
+
+### 5.8 Open federation — trust by ZKC attestation
+
+[AFP-0166] Supporting open federation is **OPTIONAL**; a conforming deployment MAY support only the bilateral path of §5.5. [AFP-0167] Where a deployment supports open federation, the requirements in this subsection are normative (MUST/MUST NOT as stated).
+
+**Open federation** is a tenant↔tenant session (§5.1, §5.2) between two conforming tenants that hold **no prior bilateral federation agreement**. In place of the agreement, trust is established **per-interaction** by mutual ZKC compliance attestation. This is the second of the two trust bases of §5.1; everything else about the session — its message classes (§5.3), its work-on-ZKA carriage (§5.4), its routing (§8), its session core (§12), and all six Freedom Safeguards (§9) — is unchanged.
+
+**Trust establishment.** To open an open-federation session, each party in turn:
+
+1. **Authenticates a scoped proof request.** The requesting tenant issues a ZKC v0.4.1-draft **Authenticated Proof Request** declaring the predicates, purpose/proof context, `presentation.profile = zkc:presentation:scoped:v1`, and `scopePolicy = protocol:afp:<profile_policy_hash>`. The APR is signed by the current KEL-anchored key of the requesting entity AID. An unauthenticated request is rejected — **no signature ⇒ no proof**.
+2. **Answers with a subject-bound native ZKC presentation.** The responder answers with `zkc:proof:v2` and the exact signed APR inside `afp:credential-envelope:v1` (§12.7.2), or declines. The carrier is signed and sealed inside the authenticated encrypted session; it contains no ZKA bundle and requires no transaction or Coord proof. [AFP-0168] Every proof is atomic and its verified credential-subject AID, scoped pseudonym, and proof context MUST satisfy §5.9. A borrowed anonymous proof is not an open-federation trust basis.
+3. **Retains a profile-minimized Disclosure Receipt.** Each party retains a holder-custodied ZKC Disclosure Receipt containing the scoped pseudonym and `scopeId`, never `holderCommitment`, unless the holder separately and explicitly consented to the linkable v1 profile.
+
+Because each side both requests and answers, trust is **mutual**: neither party is a pure verifier nor a pure holder, and each ends the exchange holding a receipt of the other's demand.
+
+**Acceptance is each party's own policy.** There is **no** global registry of who-may-transact-with-whom, **no** canonical predicate set, and **no** canonical or required attestation authority. Each party decides, under its own acceptance policy, whether the bundle it received satisfies it (**Predicate Pluralism**, Safeguard 1; verifier flexibility, ZKC §1.1). [AFP-0169] Where a party's acceptance policy includes `afp.telemetry.instance_attestation.v2`, that policy names the (root class, root authority) pairs it accepts per §6.3.1 and the counterparty proves under one accepted pair, exactly as §14.2 requires on the introduction path; a party MAY accept an authority the other party rejects, and neither outcome is a conformance judgment about the other. A satisfied policy opens the session; an unsatisfied one declines it — and declining is the *only* permitted consequence of a failed attestation, of a rejected authority, or of an authority found stale or revoked (Safeguard 5; see below).
+
+**Identity binding.** The session principals are the attested entity AIDs from step 1–2. [AFP-0170] For each direction the KERI-authenticated presenter AID, proof-authenticated credential-subject AID returned by the ZKC verifier, and responder AID MUST be identical; the APR signer key MUST resolve through the verifier AID's current KEL; and the scope and proof context MUST recompute under §5.9. [AFP-0171] The verifier MUST derive that subject AID from an issuer-authenticated claim in the verified proof, or from an independently verified companion subject-binding proof; it MUST NOT copy a holder-declared envelope label. This is the proof-borrowing guard: a proof produced for another holder/AID, verifier, policy, profile, or session is rejected even if its predicate result is otherwise true.
+
+**Safeguard 6 is what makes this safe, and is why the path is viable.** The party demanding "prove you are compliant to transact with me" is a **verifier** in the ZKC sense; Safeguard 6 requires it to authenticate the demand under a stable identity and leaves the responder with portable evidence of the demand. ZKC v0.4.1-draft scoped presentation further prevents the accountability record from forcing global holder linkability.
+
+**Interaction-boundary only (Safeguard 5).** A declined or failed attestation means the counterparty **declines the interaction**, and nothing more. [AFP-0172] It MUST NOT gate, freeze, redirect, or seize either party's funds or notes; it MUST NOT touch ZKA settlement or ZKC credential validity; and exit remains unconditional. Open federation changes *who may open a session with whom* and *how that trust is shown* — it changes nothing about value.
+
+**What open federation does NOT provide — discovery and rendezvous (§8.8).** This subsection covers **trust establishment** once the two parties are in contact. It does **not** specify how two strangers *find* each other or how first contact is routed. A queryable directory mapping tenant AIDs to routes would itself be the coordination graph that operator-blindness (OB-2, §3, §8) exists to prevent. Until a dedicated discovery/rendezvous layer with its own privacy analysis exists (a §10 open item), open federation is usable only where first contact is established **out-of-band**. AFP deliberately solves the trust half and leaves the discovery half explicitly out of scope, rather than admitting a directory that would weaken OB-2.
+
+**Relationship to the Introduction Tier (§14).** [AFP-0173] Open federation and the **introduction tier (§14)** are the two ways AFP admits a session between tenants with no *pre-existing* agreement; a deployment MAY offer either or both. They differ in what they leave behind: §5.8 establishes trust **per interaction** with **no agreement** (lightest; suited to one-off or low-stakes exchange), whereas §14 runs an *introduction session* that **mints a signed provisional §5.5 agreement** and grows a progressive, ZK-provable reputation envelope (heavier; suited to an ongoing relationship). Both inherit all six safeguards, are interaction-boundary-only (Safeguard 5), and share the same unresolved stranger-*rendezvous* problem (§10). The three trust bases are enumerated together in §12.1.
+
+### 5.9 ZKC v0.4.1-draft presentation profiles and AFP identity continuity
+
+AFP consumes credential-only ZKC v0.4.1-draft presentations through `afp:credential-envelope:v1` (§12.7.2), and compliance-accompanied substantive exchanges through the unchanged `zka:bundle:v1`; ZKC remains authoritative for the v1/v2 envelopes, circuits, APR signatures, pseudonym/scope derivation, and proof verification. AFP is authoritative for selecting the privacy profile a flow may consume and binding the verified ZKC result to AFP identity and session state.
+
+| AFP flow | Accepted profiles | Default | Downgrade rule |
+|---|---|---|---|
+| [AFP-0174] Tenant→operator telemetry (§6) | anonymous, scoped, linkable | anonymous | scoped→anonymous MAY be accepted when the predicate and policy window require no cross-presentation continuity |
+| [AFP-0175] Known-counterparty bilateral (§5.5 / §12) | anonymous, scoped, linkable | anonymous | scoped→anonymous MAY be accepted when KERI/session authentication already supplies all required continuity |
+| Introduction (§14) | scoped, linkable | scoped | no anonymous downgrade; the presentation becomes the credential basis of an ongoing provisional agreement |
+| Open federation (§5.8) | scoped, linkable | scoped | no anonymous downgrade; the presentation is the per-interaction trust basis that opens the session |
+
+In every row, `zkc:presentation:linkable:v1` is the frozen v1 proof path and requires an explicit, recorded holder consent for that presentation. It is never selected by fallback, downgrade, verifier preference, or an absent APR presentation block.
+
+**Scoped policy derivation.** AFP scoped requests use the signed ZKC `scopePolicy` string `protocol:afp:<profile_policy_hash>`, where `profile_policy_hash` is the exact session, telemetry, or introduction policy hash authenticated for the interaction. ZKC derives `scopeId` from the authenticated APR signer public key, that scope-policy string, and its declared rotation epoch (ZKC v0.4.1-draft §5.9.1). [AFP-0176] The holder derives the identifier itself; AFP MUST reject a verifier-supplied literal scope. [AFP-0177] The APR signing key MUST be the current KEL-anchored key for `apr_verifier_aid`; swapping either the AID or key fails verification.
+
+**AID, credential subject, flow purpose, and context binding.** [AFP-0178] A proof accepted for an AFP responder MUST cryptographically prove the credential's subject-AID claim equals that responder's KERI entity AID. AFP then requires the KERI-authenticated envelope presenter to be the same AID. AFP 0.3.14-draft uses the v2 ZKC presentation context below. Its `purpose` is selected from the verifier's authenticated expected flow, never from a holder-supplied label: telemetry maps to `afp:trust-flow:telemetry`, known-counterparty bilateral maps to `afp:trust-flow:bilateral`, introduction maps to `afp:trust-flow:introduction`, and open federation maps to `afp:trust-flow:open-federation`.
+
+The frozen v1 record (§12.9) is:
+
+```typescript
+interface AfpZkcPresentationContextV1 {
+  kind: 'afp:zkc-presentation-context:v1';
+  credential_subject_aid: string;       // == KERI-authenticated presenter entity AID
+  session_context: string;              // exact §5.2 / §12.3 context
+  apr_verifier_aid: string;             // APR signer key resolves here through its KEL
+  presentation_profile: string;         // active, not merely requested, profile
+  scope_policy: string | null;           // protocol:afp:<profile_policy_hash> iff scoped
+}
+```
+
+The current preimage is exactly:
+
+```typescript
+interface AfpZkcPresentationContextV2 {
+  kind: 'afp:zkc-presentation-context:v2';
+  credential_subject_aid: string;       // == KERI-authenticated presenter entity AID
+  session_context: string;              // exact §5.2 / §12.3 context
+  apr_verifier_aid: string;             // APR signer key resolves here through its KEL
+  presentation_profile: string;         // active, not merely requested, profile
+  scope_policy: string | null;           // protocol:afp:<profile_policy_hash> iff scoped
+  purpose: 'afp:trust-flow:telemetry' | 'afp:trust-flow:bilateral' | 'afp:trust-flow:introduction' | 'afp:trust-flow:open-federation';
+}
+```
+
+[AFP-0179] Before hashing, the `session_context` member MUST be the exact canonical §5.2 `X_` digest and its §5.2 ZKA field projection MUST be nonzero; the record retains the original `X_` value, not that projection. A malformed, alternate-prefix, wrong-width, non-lowercase, or zero-projecting session value is rejected before the presentation hash is computed. Let `h` be the 32 SHA-256 digest bytes of the RFC 8785/JCS UTF-8 encoding of exactly that v2 record, let `OS2IP` interpret those bytes as one unsigned big-endian integer, and let `r = 21888242871839275222246405745257275088548364400416034343698204186575808495617`, the BN254 scalar-field modulus. The proof-context scalar is `OS2IP(h) mod r`. [AFP-0180] A zero result is rejected fail-closed; implementations MUST NOT retry, rehash, or substitute another value. A nonzero result is serialized as exactly 32 unsigned big-endian bytes and rendered as `0x` followed by exactly 64 lowercase hexadecimal digits, including leading zeroes. [AFP-0181] The verifier MUST construct it from the KERI-authenticated responder AID, live session context, authenticated APR verifier AID, active presentation profile, derived-or-absent scope policy, and caller-authenticated expected flow. A presentation's declared flow is checked for exact equality only; it is not authority for policy selection or context construction. Unknown flows, v1 values, v2-shaped records without `purpose`, noncanonical field encodings, zero, and any proof whose verified context differs from this recomputation are rejected.
+
+For a subject-binding proof profile, the credential issuer signature binds the subject-AID claim to the credential and private holder commitment; the ZKC proof binds that credential subject and the active profile handle to this context; the AFP envelope signature binds the same result to the presenter's KERI AID. The generic ZKC KYC and jurisdiction profiles do not expose or prove an AID claim by themselves and therefore cannot, alone, satisfy this AFP subject-binding contract; they require a separately specified issuer-authenticated subject claim or companion proof. This repository ships no production ZKC adapter or companion subject-binding profile: its fixed-subject callbacks are synthetic conformance fixtures only. [AFP-0182] A deployment using only the generic ZKC v0.4.1-draft profiles MUST reject, and introduction/open-federation credentialing is not operational until that deployment supplies and authenticates the separately versioned subject-binding mechanism. Consequently a proof borrowed from an unrelated holder, AID, APR signer, scope, profile, session, or trust flow cannot be repackaged: at least one issuer claim, ZKC public input, KEL key binding, or AFP context comparison fails. Relabelling both holder-visible flow fields does not help because the verifier recomputes v2 from its own expected flow and requires the lower-layer verified statement to report that exact context. [AFP-0183] A boolean envelope label that merely says “verified” is insufficient; a conforming AFP implementation MUST invoke a ZKC v0.4.1-draft verifier and consume a structured verified public statement containing the exact proof context, proof-authenticated credential-subject AID, and atomic predicate statements. [AFP-0184] The adapter MUST return rejection when it cannot prove any one of those fields. [AFP-0185] Flow-purpose binding does not replace meaning binding: AFP MUST also compare the verified atomic predicate statements against the caller-authenticated required-predicate policy for that flow (§6.3, §6.3.1, §14.4).
+
+**Version and handle exclusivity.** Anonymous and scoped presentations use `zkc:proof:v2`; linkable presentations use the frozen `zkc:proof:v1`. The built-in KYC predicate is profile-versioned with that envelope: anonymous/scoped use `zkc:proof:kyc:v2`, while linkable uses `zkc:proof:kyc:v1`; a verifier selects the exact accepted predicate IDs in its caller-authenticated policy and AFP supplies no counterparty-wide catalog. The native credential-only carrier preserves either ZKC envelope verbatim. A ZKA bundle carries ZKC presentations only alongside a substantive transaction or Coord proof; the carrier choice does not relax any profile, consent, request, subject, or context check. AFP receipts, rotation presentations, and other AFP-authored artifacts expose no holder-derived handle beyond the active profile:
+
+| Active profile | Permitted holder-derived fields |
+|---|---|
+| anonymous | none in AFP-authored artifacts; `presentationPseudonym == 0` and `scopeId == 0` occur only as sentinels in the ZKC v2 proof envelope |
+| scoped | `presentationPseudonym`, `scopeId` |
+| linkable | `holderCommitment` only |
+
+Mixing handle families is a conformance failure. [AFP-0186] In particular, a scoped receipt or rotation artifact MUST NOT carry `holderCommitment`. [AFP-0187] An anonymous ZKC v2 proof envelope MUST carry the two zero sentinels required by ZKC, while an AFP-authored receipt or rotation artifact MUST omit all three holder-derived fields; implementations MUST NOT serialize the proof-envelope sentinels into those AFP artifacts.
+
+**Conformance.** [AFP-0188] Implementations MUST include negative cases for a swapped presenter AID, holder-declared credential-subject AID, proof-authenticated credential-subject AID, scope, APR signer key or AID, session/proof context, presentation profile, trust-flow purpose, and verified predicate meaning. [AFP-0189] They MUST reject a malformed, alternate-prefix, or zero-projecting AFP session context before hashing the presentation record; a v1 context; a v2 preimage with no purpose; a context produced for any other flow; a noncanonical or zero BN254 context; a verified subject differing from either the responder or the declared subject; and a presentation whose holder-facing flow labels are both changed while the lower-layer verified statement remains bound to the original flow. [AFP-0190] They MUST also demonstrate that correctly purpose-bound presentations remain accepted; that anonymous presentations remain accepted in telemetry and known-counterparty bilateral flows where continuity is unnecessary; that an anonymous rotation presents the credential as fresh with no rebind or artifact handles; that scoped continuity requires `zkc:proof:rebind:v2`; and that introduction/open-federation anonymous downgrades and unconsented linkable presentations are rejected.
+
+---
+
+## 6. Tenant ↔ Operator Telemetry
+
+This section specifies the second relationship: an operator learning that the platform is healthy without learning what tenants do. It rides on ZKC.
+
+### 6.1 Model
+
+The operator needs operational assurance — that instances are running supported, attested builds and behaving within agreed bounds. Under the operator-blindness invariant (§3), the operator obtains this assurance **only** through claims a tenant proves, never through observation of tenant work or the coordination graph.
+
+Under §3.2, per-tenant transport observation is not a capability the operator is permitted to have. Therefore **all per-tenant operator knowledge is ZKC-proved.** Nothing in the operator-health model may depend on the operator watching individual tenant traffic.
+
+**Authenticated tenant→operator channel (normative).** This is the §6 telemetry relationship between a tenant-side presenter and an operator, not a §12 tenant↔tenant bilateral session or a bilateral profile (§12.4). [AFP-0191] Both endpoints MUST authenticate the other's KERI AID using current KEL key state, event authorization (§4.4), and the applicable witness policies (§4.5). [AFP-0192] The operator MUST verify the presenter's AID binding to the stated tenant root, including its delegation chain where delegated; the tenant MUST authenticate the operator root AID (§2.1) and, for an APR, its current KEL-anchored signer (§5.9). A transport connection, subject label, or asserted verification boolean is insufficient.
+
+[AFP-0193] Before accepting a telemetry proof, the operator MUST obtain the expected tenant AID, operator AID, predicate ID and version, telemetry subject and window, active presentation profile, and applicable telemetry policy from authenticated interaction state rather than from unverified presentation labels. [AFP-0194] It MUST verify the ZKC proof and compare its verified transcript bindings with those expected values under §6.3, enforce the §5.9 identity, APR, profile, scope, meaning, and `afp:trust-flow:telemetry` purpose checks, and verify the §6.4 public-sample binding wherever required. [AFP-0195] The channel MUST retain the existing §5.9 presentation-context encoding and verification rules, including its authenticated canonical §5.2 `X_` context; it MUST reject a presentation if that context cannot be established and authenticated. This definition introduces no telemetry-specific context preimage and waives no §5.9 check. [AFP-0196] Missing, unverifiable, or mismatched authentication or proof bindings MUST cause rejection of the telemetry proof, with only the alert consequence of §6.6. Endpoint authentication grants no access to tenant work or coordination traffic (§3); proofs remain tenant-pushed under §6.5.
+
+Telemetry uses the §5.9 flow policy. `zkc:presentation:anonymous:v1` is the default because the authenticated tenant→operator channel and the predicate's public tenant/operator/window inputs already provide interaction identity. [AFP-0197] An operator MAY request scoped continuity across one declared telemetry policy window; the tenant MAY downgrade that request to anonymous when the predicate does not require cross-presentation continuity. [AFP-0198] Linkable v1 is accepted only after explicit holder consent and MUST NOT be required as the ambient telemetry mode.
+
+### 6.2 What the operator may learn
+
+The operator's per-tenant knowledge is exactly the set of claims in the telemetry predicate catalog (§6.3), each delivered as a ZKC proof. [AFP-0199] Separately, the operator MAY compute **aggregate** operational metrics across the whole tenant base (for example, total compute consumed, total error count) provided the aggregate is computed so that no per-tenant value is recoverable from it — by aggregation with a sufficient tenant count, or by differential privacy. [AFP-0200] Aggregate metrics MUST NOT be derived in a way that reveals or narrows any individual tenant's value, and MUST NOT reveal the coordination graph.
+
+### 6.3 Telemetry predicate catalog
+
+Operator-facing claims are ZKC proofs. Each claim is one atomic predicate (Safeguard 2). [AFP-0201] AFP defines the starting predicate catalog below; each predicate circuit MUST be open-source, versioned, and published with a public review period before it is accepted by an operator (§9 Safeguard 4). A telemetry proof that uses an unregistered predicate identifier, an unsupported predicate version, or a predicate outside this catalog is not AFP-conforming.
+
+> **The telemetry catalog is closed.** This is consistent with Safeguard 1 (Predicate Pluralism), which protects a verifier's freedom to choose predicates in a bilateral interaction **between equals**, including §5.8 tenant↔tenant attestation where AFP defines no canonical predicate set or global registry. The tenant→operator direction is asymmetric: the operator runs infrastructure the tenant depends on, and an open catalog would let it demand arbitrary claims as a condition of service, creating the leverage §3 and §6.6 forbid. The closed catalog is a tenant protection. Root classes are extensible **inside** the catalog through a specification revision (§6.3.1), and any new telemetry predicate passes Safeguard 4's open-source and public-review gate. [AFP-0202] An operator MUST NOT condition service on a telemetry predicate outside this catalog.
+
+| Predicate ID | Claim | Issuer model | Public inputs | Private witness | Cadence | Failure signal |
+|---|---|---|---|---|---|---|
+| `afp.telemetry.instance_attestation.v1` | "I am a verified ADAMAS instance, build hash X" | Third-party-issued: the ADAMAS publisher signs a build manifest; the tenant proves possession. | Tenant AID, entity AID or instance AID, build manifest digest, publisher AID, predicate version, telemetry window, operator AID. | Publisher-issued ZKC credential, holder binding key, instance signing key. | At bootstrap, after build change, and at least once per operator policy window. | `instance_attestation_missing` or `instance_attestation_invalid`. |
+| `afp.telemetry.instance_attestation.v2` | "This machine subject runs the attested manifest under verifier-accepted root class R and authority A." | Pluggable, as classified by §6.3.1: third-party-verifiable build provenance or TEE attestation, or a self-attested publisher manifest. | Tenant AID; entity AID or instance AID; attested manifest digest; root class; root-authority identifier; root-material digest; attestation-evidence digest; verification-policy digest; public-sample-binding digest (the zero sentinel only where §6.3.1 permits it); predicate ID and version; attestation window; verifier AID; active presentation profile. | ZKC machine build/runtime credential and holder binding key; instance signing key; attested manifest; root-specific provenance, inclusion, quote, endorsement, or publisher-signature evidence and openings; public-sample-binding witness when required. | At bootstrap, after any manifest, root authority, root material, measurement, endorsement/collateral, or verification-policy change, and at least once per verifier policy window. | `instance_attestation_missing`, `instance_attestation_invalid`, `instance_attestation_unsupported_root`, `instance_attestation_untrusted_authority`, `instance_attestation_provenance_not_in_log`, `instance_attestation_measurement_mismatch`, or `instance_attestation_sample_binding_missing`. |
+| `afp.telemetry.build_currency.v1` | "I run a supported build" | Third-party-issued: the publisher signs the supported-build set; the tenant proves set membership. | Tenant AID, build manifest digest, supported-build-set root, publisher AID, support-policy version, telemetry window, operator AID. | Membership path for the build digest and publisher-issued support credential. | At bootstrap, after build change, and whenever the supported-build-set root changes. | `build_currency_missing`, `build_currency_expired`, or `unsupported_build`. |
+| `afp.telemetry.compute_quota.v1` | "My consumption is within agreed bounds" | Self-attested: the tenant signs a usage-log root and proves the bound. | Tenant AID, usage-log root, quota policy digest, committed usage upper bound, telemetry window, operator AID, `afp:telemetry-sample-binding:v1` digest. | Usage-log inclusion/range witnesses, tenant usage signing key, and sample-binding witness from §6.4. | Once per quota window and after any policy-window close. | `compute_quota_missing`, `compute_quota_invalid`, or `compute_quota_over_bound`. |
+| `afp.telemetry.audit_log_integrity.v1` | "My audit log has not been truncated" | Self-attested: the tenant signs the current append-only audit-log head. | Tenant AID, previous accepted log head, current log head, append-only accumulator root, telemetry window, operator AID, `afp:telemetry-sample-binding:v1` digest. | Append-only proof from previous to current head, tenant audit signing key, and sample-binding witness from §6.4. | Every audit window and after recovery from a missed window. | `audit_log_missing`, `audit_log_invalid`, or `audit_log_truncated`. |
+
+[AFP-0203] Every operator-facing catalog proof MUST bind the tenant AID, operator AID, predicate ID, predicate version, telemetry subject, telemetry window, active ZKC presentation profile, and the exact `afp:trust-flow:telemetry` purpose into the proof transcript. For v2, these values map to `verifier_aid = operator AID` and `attestation_window = telemetry window` under §6.3.1. Scoped proofs additionally bind `protocol:afp:<telemetry-policy-hash>`, the APR signer, pseudonym, and `scopeId` per §5.9. This prevents replay across verifier, subject, window, policy, profile, scope, or AFP trust flow. [AFP-0204] Predicate versions are monotonic: a verifier MAY accept multiple versions during a migration window, but it MUST publish the accepted version set and MUST NOT reinterpret a v1 predicate or linkable presentation under later semantics.
+
+Third-party-issued predicates prove *what* a tenant is. [AFP-0205] Self-attested predicates prove *how* a tenant behaves and MUST carry the public-sample binding of §6.4. `build_currency` is third-party-issued; `compute_quota` and `audit_log_integrity` are self-attested. Instance attestation is versioned separately: v1 is a frozen form whose semantics are its catalog row (§12.9), while v2 uses the root-class taxonomy and binding rules below. Both versions are usable operator-facing; counterparty-facing policy in §14 uses v2 so it can select a vendor-neutral root. The delegated, product-scoped publisher construction of §6.3.1 applies only to v2 and later versions.
+
+### 6.3.1 Instance-attestation root classes
+
+`afp.telemetry.instance_attestation.v2` fixes the generic statement. Its wire-level public statement is:
+
+```typescript
+interface AfpInstanceAttestationPublicInputsV2 {
+  kind: 'afp:instance-attestation-public-inputs:v2';
+  tenant_aid: string;
+  subject_aid: string;                       // entity AID or instance AID
+  attested_manifest_digest: string;          // canonical digest, defined below
+  root_class: 'root:build-provenance' | 'root:tee-attestation' | 'root:publisher-manifest';
+  root_authority_identifier: string;
+  root_material_digest: string;
+  attestation_evidence_digest: string;
+  verification_policy_digest: string;
+  public_sample_binding_digest: string;      // canonical digest or exact zero sentinel
+  predicate_id: 'afp.telemetry.instance_attestation.v2';
+  predicate_version: '2';
+  attestation_window: { starts_at: datetime; ends_at: datetime };
+  verifier_aid: string;
+  presentation_profile: string;              // active §5.9 profile
+}
+```
+
+[AFP-0206] For tenant→operator telemetry, `verifier_aid` MUST equal the telemetry operator AID and `attestation_window` MUST equal the telemetry window. [AFP-0207] For §14 counterparty use, `verifier_aid` MUST equal the APR's `apr_verifier_aid`; the APR signing key MUST resolve through that AID's current KEL, and a delegated verifier AID MUST resolve through its delegation chain to the counterparty tenant AID. [AFP-0208] `attestation_window` MUST equal the explicit `attestation_window` on `afp:introduction-request:v1` and MUST be bounded by the session expiry. The proof context additionally binds the APR signer, session context, scope policy, active presentation profile, and the exact §5.9 trust-flow purpose selected by the verifier. [AFP-0209] A proof made for one flow, verifier, or window MUST NOT verify in the other.
+
+Where an authority delegates product-scoped signing (below), two obligations apply and are discharged differently. [AFP-0210] **The delegated signing AID's delegation chain MUST resolve to the AID named by `root_authority_identifier`, and the verifier MUST perform that resolution out of circuit before acceptance** — that resolution reads only published KEL events, which the verifier holds. [AFP-0211] **The manifest signing key MUST be the current signing-key state of that delegated AID.** The verifier recomputes `root_material_digest` from the signing-key state it resolves, and the circuit proves that the hidden manifest signature verifies under exactly that committed state. The circuit binds the leaf signing-key state committed by `root_material_digest`; the delegation chain is an out-of-circuit verifier obligation. [AFP-0212] A verifier that cannot resolve the chain to the named authority root MUST reject the proof with `instance_attestation_untrusted_authority`.
+
+**Canonical encoding (normative).** Every non-sentinel `*_digest` is the ASCII string `sha256:` followed by exactly 64 lowercase hexadecimal characters. [AFP-0213] AFP-authored JSON artifacts use RFC 8785 JSON Canonicalization Scheme (JCS) bytes and MUST contain a `kind` discriminator; AFP's `datetime` strings first normalize to whole-second UTC `YYYY-MM-DDTHH:MM:SSZ`. [AFP-0214] External provenance statements, transparency-log entries/checkpoints, hardware reports/collateral, and publisher-signed manifests MUST NOT be re-encoded as AFP JSON. Their digest is SHA-256 over `ASCII("AFP-External-Artifact-v2\0") || u32be(len(kind)) || UTF8(kind) || u32be(len(scheme)) || UTF8(scheme) || u64be(len(signed_bytes)) || signed_bytes`, where `signed_bytes` are the exact scheme-native signed bytes and `kind` and `scheme` are nonempty ASCII identifiers fixed by the accepted verification policy. This wrapper domain-separates artifact types without changing the signed payload.
+
+**Publisher signing-key state (normative).** For `root:publisher-manifest`, `root_material_digest` commits to the publisher's signing-key state. That state is neither an external provenance artifact nor a transparency-log checkpoint nor hardware collateral, so it is AFP-authored and therefore carries a `kind` under the rule above. Its preimage is the RFC 8785 JCS bytes of exactly:
+
+```typescript
+interface AfpPublisherKeyState {
+  kind: 'afp:publisher-key-state:v1';
+  authority_aid: string;                 // == root_authority_identifier
+  signing_aid: string;                   // delegated signing AID; == authority_aid when signing is not delegated
+  delegation_anchor_dig: string | null;  // said of the authority-KEL event anchoring the delegated inception; null iff signing_aid == authority_aid
+  key_state_event_dig: string;           // said of the establishment event, in the signing AID's KEL, fixing the state below
+  key_state_sequence_number: number;     // that event's sequence number in the signing AID's KEL
+  signing_public_keys: string[];         // ordered current signing keys, exactly as the establishment event lists them
+  signing_threshold: string | string[] | string[][];  // implicit "1" in §4.4.2; reserved union for future encodings
+  next_key_digests: string[];            // ordered pre-rotation commitments from the same event, verbatim
+  next_threshold: string | string[] | string[][];     // implicit "1" in §4.4.2; reserved union for future encodings
+}
+```
+
+**Field encodings are KEL-native and are never re-encoded.** `delegation_anchor_dig` and `key_state_event_dig` carry the digests of those events exactly as the KEL lists them (§4.4.2), and each element of `signing_public_keys` and `next_key_digests` carries the corresponding key or pre-rotation commitment exactly as the establishment event lists it. [AFP-0215] For the single-key encoding in §4.4.2, `signing_threshold` and `next_threshold` MUST both be the string `"1"`, derived from the implicit one-key signing policy; they MUST NOT be copied from the witness `threshold`. [AFP-0216] The union type reserves KERI-shaped `kt`/`nt` values for a future encoding, but this version MUST reject any other signing threshold when resolving a §4.4.2 KEL. These fields are KEL-native identifiers and values, they follow the `_dig` convention this specification already uses for KEL event digests (§4.5.1, §4.6.1, §12.2.1), and they are **NOT** re-encoded under the `sha256:`-prefixed `*_digest` rule above. RFC 8785 JCS then canonicalizes the record — including a nested threshold — deterministically.
+
+`root_material_digest` is `sha256:` followed by the lowercase hex SHA-256 of those JCS bytes. [AFP-0217] A verifier MUST recompute this digest from the key state it independently resolves out of the **signing AID's** KEL, reached through the delegation anchors in the authority's KEL (§4.2, §4.4), and MUST reject a mismatch with `instance_attestation_untrusted_authority`. Where signing is not delegated the signing AID *is* the authority AID and the two KELs coincide. Every field is derived from published KEL events, so the record is a re-encoding of state the verifier already holds; it is never transmitted as an AFP message, adds no public input, and adds no wire field. [AFP-0218] For `root:publisher-manifest`, the same record MUST also appear in the circuit's private witness: the circuit reconstructs its RFC 8785 JCS bytes, opens `root_material_digest` as their SHA-256 digest, and uses that record's `signing_public_keys` and `signing_threshold` for publisher-signature verification. The circuit binding and the verifier's independent recomputation are both mandatory and prove different facts: the former binds the hidden signature to the public digest, while the latter binds that digest to authority-anchored public KEL state. [AFP-0219] For `root:build-provenance` and `root:tee-attestation`, `root_material_digest` retains the external-artifact meaning fixed in their branches below and MUST NOT use this record.
+
+[AFP-0220] The exact absent-sample sentinel is `sha256:0000000000000000000000000000000000000000000000000000000000000000`, which MUST NOT be accepted as an artifact digest. The circuit decodes each real digest to 32 bytes and exposes it as two unsigned 128-bit big-endian limbs (high limb, then low limb). It maps `root_class` to `1`, `2`, or `3` in the order shown above. Each string public input maps separately to two limbs as SHA-256 over `u32be(byte_length) || UTF8(NFC(string))`. The `attestation_window` object maps to two limbs as SHA-256 over its RFC 8785 JCS bytes and exposes `starts_at` and `ends_at` additionally as unsigned 64-bit Unix seconds. [AFP-0221] Verifiers MUST recompute every mapping and reject noncanonical strings, timestamps, digests, sentinels, or limb values. This construction uses SHA-256, not `H(domain, x...)`, and therefore adds no AFP-KDC field-domain tag.
+
+[AFP-0222] The `root class` MUST be one of the three literal values above. [AFP-0223] The `root-authority identifier` MUST resolve, under the verifier's authenticated `verification-policy digest`, to trust material the verifier accepted before receiving the proof. It is not a prover-selected display name.
+
+For an **organizational** attestation root authority — the case `root:publisher-manifest` presents, and the case any KERI-rooted authority presents under any class — the authority is the **accountable party** that stands behind the attestation, identified by its organizational root AID, never a product, brand, build line, or software distribution. [AFP-0224] For such an authority, a `root-authority identifier` naming a product rather than the party accountable for it MUST NOT be accepted. In `root:tee-attestation`, the identifier instead names a hardware vendor's product-root policy resolved from the verifier's pinned vendor-root configuration. In `root:build-provenance`, it names a transparency log's checkpoint signer under the verifier's accepted log policy. The branch rules below are authoritative for those two meanings.
+
+[AFP-0225] An organizational authority MAY delegate product-scoped signing: the signing AID is then a delegated AID whose inception is anchored in the authority's KEL, exactly as an entity is delegated from a tenant root (§4.2), and `root-material digest` MUST commit to that delegated signing-key state. [AFP-0226] Rotation, compromise handling, and succession of a delegated signing key MUST run as explicit, published events — the delegated inception and each delegated rotation as events in the **signing AID's** KEL, each anchored by a seal in the **authority's** KEL (§4.2, §4.4, §4.6). It is through those anchors that the authority remains the authoritative source for the signing key's state and for the stale/revoked determination below, and this holds for any authority identified by a KERI AID without reference to any registry, advisory feed, or vendor document. For `root:build-provenance` and `root:tee-attestation` the equivalent determination is made against the log-policy and pinned vendor-root material fixed in those branches. What holds for **every** class, without exception, is that no authority-published feed is ever on the normative path. The binding between an authority AID and the legal entity it denotes is established **out-of-band**, at the moment a verifier accepts that authority's trust material into its verification policy; AFP defines no on-wire representation of that binding and no protocol step that establishes it.
+
+`root-material digest` commits to the exact accepted transparency-log checkpoint, hardware endorsement/collateral set, or publisher signing-key state used for this proof. `attestation-evidence digest` has the branch-specific meaning fixed below and commits to evidence without exposing the raw provenance bundle, TEE quote, or signed manifest. The separately versioned ZKC machine build/runtime credential schema defines the provider-neutral claim consumed here; AFP binds that claim to these public inputs and does not redefine the credential schema or issuer-adapter stages.
+
+[AFP-0227] The v2 circuit MUST prove all common properties: the prover holds an authentic, unexpired machine build/runtime credential and its holder binding; the credential's machine subject equals the KERI-authenticated entity or instance AID; the instance signing key is controlled by that subject; the hidden manifest opens to `attested manifest digest`; the hidden root evidence opens to `attestation-evidence digest`; the credential claim, root evidence, and manifest agree on the root class, root authority, machine subject, and manifest; and the proof transcript binds every v2 public input plus the active §5.9 presentation profile. [AFP-0228] It MUST then enforce the branch below for the declared root class. [AFP-0229] A verifier MUST reject an unknown class, a class/authority mismatch, a stale or revoked authority, a branch proof produced for another class, or a nonzero/zero public-sample-binding digest that violates that class's rule. [AFP-0230] It MUST also reject a **root-material digest absent from its accepted policy** for `root:build-provenance` and `root:tee-attestation`, where that digest names an externally pinned checkpoint or vendor-collateral set. For `root:publisher-manifest` the accepted policy binds the **authority AID**, not a key-state digest: `root_material_digest` is a per-key-state value that changes at every published rotation, and it is validated by recomputation from the resolved KEL state under the publisher-key-state rule above rather than by presence in a pre-signed list. A verifier's policy therefore does not have to be re-signed on every publisher rotation, and a policy that does additionally pin a specific publisher key-state digest pins that key state and nothing more.
+
+Two clarifications govern that list where signing is delegated. [AFP-0231] **Agreement on the root authority is agreement on the identifier value**: the credential claim, root evidence, and manifest MUST agree on the `root-authority identifier` the proof declares, and the circuit is not required to prove the delegation chain behind it — the verifier resolves that chain out of circuit before acceptance, as stated above. [AFP-0232] **For a KERI-rooted authority, staleness and revocation are resolved from its KEL**: where the `root-authority identifier` is a KERI AID — the organizational case, and the only case `root:publisher-manifest` admits — a verifier MUST determine that authority's current key state, revocation, and succession from the authority's KEL and the KELs it anchors, under §4.2, §4.4, and §4.6, and MUST reject a proof whose committed signing-key state is superseded by a published rotation, whose delegated signing AID's delegation has been revoked, or whose authority root key state the verifier can no longer resolve. This parallels the `kel_keystate_stale` rejection of §12.3. For `root:build-provenance` and `root:tee-attestation` — whose authorities are a transparency log's checkpoint signer and a hardware vendor's product root, neither of which is required to be a KERI AID with a KEL — the same determination is made instead against the checkpoint-signer key and rotation state under the verifier's accepted log policy, and against the verifier's pinned vendor root configuration with its collateral freshness and revocation state, exactly as those branches already fix below. In every class the material is either self-certifying KERI state or material the verifier itself pinned; in no class is an authority-published feed on the normative path.
+
+**Authority-KEL integrity is not assumed.** An authority is not a tenant (§2.1), so the §4.5 tenant-scoped witness duties do not attach to it of their own force. [AFP-0233] A verifier MUST therefore verify authority-KEL events — and the KEL events of any AID that authority anchors — against a witness set and threshold pinned in the authority trust material it accepted into its verification policy, applying the receipt-threshold rule of §4.5. A KEL that does not meet the pinned threshold, or that forks against events the verifier previously accepted, is treated as **unresolvable authority key state** and routes to exactly the consequence stated below, never to any other.
+
+[AFP-0234] An authority MAY additionally publish an advisory or status feed covering **its own** key state and revocation status as a convenience; such a feed MUST NOT enumerate, rank, endorse, or report on any other authority (§1.2). No verifier is required to consult one, and no such feed is a normative path for discharging this obligation.
+
+The consequence of any authority-related failure — an authority the verifier does not accept, an authority found stale or revoked, an unresolvable delegation, or unresolvable authority key state — is exactly the consequence of any other failure in this section and nothing more: in tenant→operator telemetry an alert under §6.6, and in **every** counterparty-facing use — a §5.4/§5.5 bilateral interaction, open federation (§5.8), and the introduction tier (§14.3) — declining the interaction and nothing beyond it. [AFP-0235] A rejected, stale, or revoked authority MUST NOT gate, quarantine, freeze, or otherwise act upon tenant state, a tenant's funds or notes, or any prior session, and MUST NOT force a downgrade of tenant state (Safeguards 3 and 5). A §14.7 contraction of the **go-forward** envelope is a form of declining to extend further credit and is unaffected by this sentence; it touches no prior session and no tenant state.
+
+- **`root:build-provenance`.** [AFP-0236] `attestation_evidence_digest` MUST be the external-artifact digest of the exact signed provenance statement. [AFP-0237] The private witness MUST include that statement, builder identity/signature evidence, artifact/subject mapping to `attested_manifest_digest`, the accepted scheme-specific log entry and leaf bytes, and the Merkle inclusion path. [AFP-0238] The verifier MUST authenticate the checkpoint signer named by `root_authority_identifier`, recompute the checkpoint committed by `root_material_digest`, apply its split-view/consistency policy against its last accepted checkpoint, and verify the ZKC circuit whose public statement names the exact statement digest and checkpoint. [AFP-0239] The circuit proves leaf inclusion: it MUST verify the builder signature and policy, exact manifest subject, that the accepted log's leaf-construction algorithm commits the scheme-specific log entry to `attestation_evidence_digest`, and that the resulting leaf, Merkle path, tree size, and root match the authenticated checkpoint. Together these checks are the required transparency-log inclusion verification; the log entry and path remain hidden. [AFP-0240] A signature without an authenticated checkpoint and successful inclusion branch is insufficient and MUST fail with `instance_attestation_provenance_not_in_log`. [AFP-0241] A §6.4 public-sample binding is OPTIONAL because the independently obtained log checkpoint is its external root; the exact zero sentinel denotes absence. [AFP-0242] If nonzero, the binding MUST verify under §6.4 and commit to the same manifest, verifier, and attestation window.
+- **`root:tee-attestation`.** [AFP-0243] `attestation_evidence_digest` MUST be the canonical digest of the exact hardware attestation report. [AFP-0244] The private witness MUST include that report, endorsement chain, freshness material, measurement, and manifest-to-measurement mapping accepted by policy. [AFP-0245] Its report-data field MUST equal SHA-256 over the canonical bytes of `{kind:'afp:instance-attestation-report-data:v2', attested_manifest_digest, subject_aid, attestation_window, verifier_aid}`. [AFP-0246] The circuit MUST prove this measurement-to-manifest binding, report signature/endorsement chain, allowed measurement under `verification_policy_digest`, and freshness for `attestation_window`. [AFP-0247] `root_authority_identifier` MUST name the hardware vendor/product root policy; `root_material_digest` MUST commit to the exact verifier-accepted vendor certificate roots, revocation status, and endorsement/collateral version. [AFP-0248] The verifier MUST resolve those values from its own pinned hardware-vendor root configuration, validate collateral freshness and revocation, and MUST NOT trust a vendor root supplied only inside the quote. [AFP-0249] A §6.4 public-sample binding is OPTIONAL because the independently authenticated report is the external root; the exact zero sentinel denotes absence, and a nonzero binding MUST verify against the same manifest, verifier, and window.
+- **`root:publisher-manifest`.** [AFP-0250] `attestation_evidence_digest` MUST be the canonical digest of the exact publisher-signed manifest. [AFP-0251] Beyond the common witness above, the private witness for this branch MUST include exactly: that manifest, the publisher signature over it, and the `afp:publisher-key-state:v1` JCS bytes for the committed signing-key state. Beyond the common constraints above, this branch has exactly four circuit constraints: the hidden manifest opens to `attested_manifest_digest`; the circuit reconstructs the publisher-key-state JCS bytes from the witnessed record and requires their SHA-256 digest to equal `root_material_digest`; the hidden signature verifies over the manifest under that record's `signing_public_keys` at its `signing_threshold`; and the record's `authority_aid` equals `root_authority_identifier`. Delegation-chain validation is not a fifth circuit constraint. [AFP-0252] The verifier MUST independently establish that the witnessed record is the current state of the named `signing_aid` and that the signing AID's delegation chain reaches `root_authority_identifier`, by recomputing from resolved KEL state before acceptance. `root_material_digest` for this class is the `afp:publisher-key-state:v1` digest of the (possibly delegated) signing-key state. Because a platform publisher is attesting its own build, this class is **SELF-ATTESTED at the platform layer**, not third-party-issued. [AFP-0253] Its `public_sample_binding_digest` MUST NOT be the zero sentinel and MUST identify a valid §6.4 public-sample binding over the same manifest, predicate version, attestation window, verifier, and assertion commitment; absence fails with `instance_attestation_sample_binding_missing`. [AFP-0254] A deployment relying on this class alone MUST make the §3.5 honest disclosure that its instance authenticity rests on publisher self-attestation and a public consistency sample, not an independent build-provenance log or hardware root. [AFP-0255] It MUST NOT describe the result as third-party attestation.
+
+  An authority under this class attests **only manifests it itself signs**. [AFP-0256] It makes no statement, warranty, or attestation about any build it did not produce — including forks, rebuilds, and derivative distributions — and a proof MUST NOT be read as one. [AFP-0257] **This guarantee is not purely in-circuit, and an implementer MUST NOT treat it as if it were.** The circuit proves that the hidden signature verifies under the exact key state committed by `root_material_digest` and that the witnessed record names the declared authority; it does not prove that the record's `signing_aid` is actually delegated from that authority or that the record reflects current KEL state. Those facts rest on the verifier's **mandatory out-of-circuit recomputation** of `root_material_digest` from the KEL state it resolves through the authority's delegation anchors, together with the policy match on the accepted authority. Absent that recomputation, a party could construct a key-state record naming another organization's root AID as `authority_aid`, commit its own keys in that record, sign its own manifest with them, and satisfy every in-circuit constraint — so a verifier that omits the recomputation forfeits the property and accepts forged attribution. A fork or derivative distribution stands up its **own** publisher authority under the identical rules of this section — it may attest its own builds on exactly the same terms — but it does not inherit, and cannot borrow, the authority of the upstream publisher.
+
+  The disclosure duty is split and both halves apply. The deployment's §3.5 duty binds the deployment as a conformance subject (§1.5). [AFP-0258] The authority's half is a **verifier acceptance condition**, because an authority is not an AFP principal and not an AFP conformance subject (§1.5, §2.1): a verifier MUST NOT accept an authority under this class unless the trust material it accepted characterizes the attestation as platform-layer self-attestation rather than as third-party attestation. An authority that wishes to be accepted under this class therefore characterizes its own attestation truthfully in the trust material it publishes (§3.5) — that is where the duty is discharged, and it is not discharged in, and does not re-home, the §6.4 public-sample binding, which is produced and signed by the tenant. This is one of exactly two acceptance conditions this section states over accepted trust material — the other is the pinned witness set and threshold above — and together they are the whole of the normative standing AFP grants an authority's published material (§10).
+
+  **Operational-status disclosure, on every path.** [AFP-0259] Where a named authority's KEL and published trust material do not yet exist, a deployment selecting that authority MUST disclose the path as *spec-available but not operational* under §3.5 and MUST NOT claim an operational attestation path — on the tenant→operator telemetry path, on a §5.4/§5.5 bilateral path, and on the §5.8 open-federation path alike. Where the deployment also runs the §14 introduction tier, §14.9 applies additionally and in its own terms.
+
+The operator-facing predicate catalog remains closed. Safeguard 1 permits each bilateral verifier to choose which of the three registered root classes and which authorities it accepts; it does not permit an implementation to invent a fourth class or accept an unregistered telemetry predicate. Extending the **root-class taxonomy** requires a revision to this section.
+
+**Standing up a new root authority does not.** [AFP-0260] The set of authorities is open and unenumerated: any organization MAY stand as an authority under any of the three classes, on the identical terms this section states, and does so by publishing trust material a verifier can accept — not by registration with, permission from, notification to, or a grant by any party, and not by an amendment to this specification. Whether a given verifier accepts a given authority is that verifier's policy decision alone (Safeguard 1, §9). AFP maintains no authority registry and defines no procedure for admitting, ranking, suspending, or removing an authority. Naming an authority in this specification records an instance of the construction; it neither privileges that authority nor closes the set.
+
+**Shipped defaults are product configuration (normative).** [AFP-0261] An implementation MAY ship a default verification policy naming authorities it recommends. [AFP-0262] Such an entry MUST be visible to, editable by, and removable by the deployment operating it; it MUST NOT be required for conformance, and an implementation MUST NOT hardcode an authority entry a deployment cannot remove. It is product configuration and **not a default of this specification**: this specification defines no default authority and no default (root class, root authority) pair. A shipped entry applies to an interaction only once the party operating the deployment signs it into that interaction's policy (§5.5, §14.4). The §9 Safeguard 1 and §12.8 rows state how this bears on the safeguards; this paragraph is where the obligation itself lives.
+
+> **Non-normative — the first named authority. None of the following is yet operational.** Pyramidal Inc.'s organizational root AID **has not been incepted**, and no AID value is asserted here or anywhere else in this specification. What follows records the *intended* instantiation of the construction above so that the normative text can stay authority-agnostic, exactly as ADAMAS is cited as the reference implementation without becoming the definition (§1.5.1, §2.1). Nothing in this note is a requirement of this specification; every requirement it alludes to is stated in the normative text above and binds there, not here.
+>
+> - **Pyramidal Inc.** is the first named attestation root authority. For proofs it stands behind, `root_authority_identifier` is intended to resolve to **Pyramidal Inc.'s organizational root AID** — the accountable legal entity, not the ADAMAS product.
+> - ADAMAS build manifests are to be signed by a delegated, product-scoped **ADAMAS publisher** AID whose inception is to be anchored in Pyramidal's KEL, mirroring the tenant→entity delegation of §4.2. `root_material_digest` would then commit to that delegated signing-key state as `afp:publisher-key-state:v1` above, with rotation, compromise handling, and succession of the publisher key running as explicit events in the publisher AID's KEL, each anchored by a seal in Pyramidal's organizational KEL.
+> - The ADAMAS product line attests under `root:publisher-manifest` and is therefore self-attested at the platform layer, with the mandatory §6.4 public-sample binding and both halves of the disclosure duty above. Pyramidal attests only ADAMAS builds it produces; a fork or third-party distribution stands up its own authority under the same rules.
+> - Once incepted, Pyramidal Inc.'s organizational root AID is intended to ship as the **default entry in ADAMAS verification policies**. That would be a shipped product configuration — visible, editable, and removable by the deployment operating it, per the normative paragraph above — never a default of this specification and never a requirement of it (§9, §12.8, §14.4).
+> - The AID↔legal-entity binding would be established out-of-band when a verifier accepts Pyramidal's trust material, per the rule above.
+> - Because the authority's KEL and published trust material do not yet exist, the operational-status disclosure stated normatively above applies today to any deployment selecting this root path, and §14.9 applies additionally where that deployment runs the introduction tier.
+> - Pyramidal Inc. is also an AFP **operator** and is constrained as one by §8.6. The two roles are independent in both directions; neither transfers trust to the other.
+
+### 6.4 Public-sample consistency
+
+A self-attested claim is only as good as its resistance to a lying tenant. AFP requires that each self-attested predicate be paired with a **public sample** the verifier can check the signed assertion against — for example, an aggregate count or a digest the verifier independently holds — and that the proof demonstrate cryptographic consistency between the signed assertion and the sample.
+
+For a `root:publisher-manifest` proof (§6.3.1), the mandatory public-sample binding is produced and signed by the **tenant** proving its own instance, as this section's artifact requires; it is not produced or signed by the attestation authority, and the authority's separate duty to characterize its own attestation (§6.3.1) is discharged in that authority's published trust material rather than here.
+
+The consistency artifact is a ZKC proof over a tenant-signed sample binding:
+
+```typescript
+interface AfpTelemetrySampleBinding {
+  kind: 'afp:telemetry-sample-binding:v1';
+  tenant_aid: string;
+  predicate_id: string;                 // ZKC predicate identifier from §6.3
+  predicate_version: string;
+  telemetry_window: {
+    starts_at: datetime;
+    ends_at: datetime;
+  };
+  assertion_commitment: string;          // commitment to the private self-attested value
+  sample_kind: 'aggregate' | 'selective-reveal' | 'external-digest';
+  sample_commitment: string;             // commitment to the verifier-checkable sample
+  sample_policy: {
+    min_population?: number;             // REQUIRED for aggregate samples
+    differential_privacy?: {
+      epsilon: number;
+      delta: number;
+    };
+    revealed_fields?: string[];          // REQUIRED for selective-reveal samples
+    external_source_aid?: string;         // REQUIRED for external-digest samples
+  };
+  sample_context_hash: string;           // hash of cadence, operator, and predicate context
+  issued_at: datetime;
+  tenant_signature: string;
+  zkc_proof: string;                     // proves consistency without revealing hidden values
+}
+```
+
+[AFP-0263] The `zkc_proof` MUST prove all of the following:
+
+1. the prover controls `tenant_aid` and signed the binding;
+2. `assertion_commitment` commits to the same private value used by the self-attested telemetry predicate;
+3. `sample_commitment` commits to a verifier-checkable sample whose declared `sample_kind` and `sample_policy` are satisfied;
+4. the assertion is included in, bounded by, or equal to the public sample according to the predicate-specific rule; and
+5. the proof binds `predicate_id`, `predicate_version`, `telemetry_window`, `sample_context_hash`, and the operator-facing telemetry subject so the sample cannot be replayed across predicates, operators, or windows.
+
+**v2 counterparty mapping (normative).** The `afp:telemetry-sample-binding:v1` field names remain frozen for telemetry compatibility. [AFP-0264] For v2 sample bindings, including mandatory `root:publisher-manifest` bindings used in §14, `telemetry_window` MUST equal the v2 `attestation_window`; the operator component inside `sample_context_hash` MUST be replaced by `verifier_aid`; and the operator-facing telemetry subject component MUST be replaced by the exact AFP introduction session context. Requirement 5 above is evaluated with those substitutions, so the binding cannot replay across counterparty verifier, APR, session, or window. [AFP-0265] The binding's tenant signature and proof context MUST also bind `afp.telemetry.instance_attestation.v2`, its active §5.9 profile, and the selected root class/authority. [AFP-0266] These mappings do not change the v1 artifact's wire fields and MUST NOT be applied to frozen `instance_attestation.v1`.
+
+The allowed sample forms are intentionally narrow:
+
+- **Aggregate sample.** The tenant proves that its committed value is included in an aggregate whose population is at least `min_population`, or that the aggregate is differentially private under the declared `(epsilon, delta)`. [AFP-0267] The aggregate MUST NOT expose any individual tenant value or coordination relationship.
+- **Selective-reveal sample.** The tenant reveals the minimum fields required for the verifier to recompute the predicate-specific rule and proves that the unrevealed fields remain bound to the same assertion commitment.
+- **External-digest sample.** A non-operator source, named by `external_source_aid`, publishes a signed digest or Merkle root the verifier independently obtains. "Non-operator" means operationally independent of the verifier for that binding. In tenant→operator telemetry, that verifier is the operator bound by `sample_context_hash`; under the v2 counterparty mapping, it is `verifier_aid`. [AFP-0268] The source MAY operate an AFP transport for another deployment: "non-operator" excludes only the verifier for this binding, not every AFP operator. A source operated by, controlled by, or under common control with that verifier is not independent. A distinct AID does not by itself establish independence. The tenant proves consistency with the digest or root without giving the operator access to the underlying per-tenant log.
+
+Under §3, the operator has no per-tenant transport observation to use as a sample. [AFP-0269] A public sample for a self-attested predicate MUST therefore be one of the forms above; it MUST NOT be derived from operator surveillance of tenant traffic, message timing, counterparty identity, coordination volume, or any other coordination-plane observation.
+
+If the sample binding is missing, expired, inconsistent with the predicate, or uses a sample form outside this section, the proof fails. In tenant→operator telemetry, §6.6 applies: the result is an alert only, never operator intervention in tenant state. [AFP-0270] In §14 counterparty use, the verifier declines the introduction interaction under §14.3; it MUST NOT form the provisional agreement, gate tenant state, or impose any other consequence.
+
+### 6.5 Push model and cadence
+
+Telemetry is **tenant-push**. A tenant publishes telemetry proofs on a telemetry subject the operator subscribes to; the tenant controls timing. The operator monitors cadence — a missing proof within an expected window is itself a meaningful operational signal — but cadence is established by the *presence or absence of pushed proofs*, not by transport observation of the tenant's other traffic.
+
+### 6.6 Failure semantics
+
+[AFP-0271] A failed or missing telemetry proof MUST NOT trigger any automated operator intervention in tenant state. Per Safeguard 3 and the operator-blindness invariant, the operator has no such capability and the protocol grants none. A telemetry-proof failure propagates as an **alert** on a separate operator-monitored subject; human investigation follows. This is the structural difference between AFP operator telemetry and a ZKC v0.4.1-draft compliance gate: a gate is allow-or-deny; AFP telemetry is observe-and-alert. AFP defines no gate over tenant state for any party.
+
+### 6.7 Topology independence
+
+The tenant↔operator protocol surface is identical whether the tenant runs on a managed transport or a self-hosted appliance. In every topology, the operator learns only what the tenant proves. There is no deployment in which the operator learns more by observation; §3 forbids it. The appliance case is therefore not a privileged tier for telemetry — it is the same protocol — and the managed-transport case is held to the same structural standard.
+
+---
+
+## 7. Deployment Topologies
+
+### 7.1 Auditable implementation
+
+Every topology in this section is conformance-relevant only to the extent that the software realizing it can be checked: operator blindness is a claim about capability (§3.2), and a capability claim is verifiable only against an implementation open to inspection. This subsection states that requirement; it applies to §7.2 and §7.3 alike. Two consequences are normative:
+
+- **Auditability of OB.** [AFP-0272] All OB-relevant behavior of a conforming tenant or transport implementation MUST be auditable: a tenant, or a third party, MUST be able to verify *by inspection* that no operator data path into tenant state exists. This is what makes OB a capability claim (§3.2) rather than a promise. Source availability is the canonical way to satisfy this requirement; ADAMAS, the reference implementation published by Pyramidal Inc., satisfies it under a Business Source License with a scheduled conversion to Apache 2.0. The same party publishes the ADAMAS build manifests attested under §6.3.1; auditability under this subsection and attestation under §6.3.1 are independent obligations, and neither substitutes for the other — an attested build is not thereby auditable, and an auditable implementation is not thereby attested.
+- **No privileged operator build.** [AFP-0273] A conforming AFP implementation MUST NOT depend on a closed or operator-only build for any OB-relevant behavior. [AFP-0274] Anything load-bearing for §3 MUST be within the material an auditor can inspect under the first bullet; where that material is source, it MUST be the published source.
+
+[AFP-0275] An implementation that cannot support inspection of its OB-relevant behavior MUST NOT claim OB as a capability (§3.2). [AFP-0276] Such an implementation falls under the honest-disclosure duty of §3.5: it MUST disclose the limitation to its tenants rather than represent OB as satisfied. Inability to support inspection is a limitation of the implementation, never a lesser standard of conformance — §3.2 admits no substitute for structural verifiability.
+
+### 7.2 Appliance
+
+An **appliance** is a self-hosted deployment of a conforming tenant that does not connect to an operator-run transport — not a distinct protocol target. For the reference implementation, it is offered as a hardware recommendation plus a licensed ADAMAS image and support plan. An appliance tenant runs the same AFP 0.3.14-draft interface as a managed-transport tenant. The appliance reaches the rest of the federation through the §8 routing layer; it does not connect to an operator-run transport that could observe it. Identity migration to or from an appliance is the one-move operation of §4.7.
+
+### 7.3 No operator-run coordination transport
+
+AFP does not define a deployment in which an operator runs the transport that tenant↔tenant coordination traffic transits. Such a deployment cannot satisfy OB-2 (§3.3) and is not a conforming topology. Operators may run telemetry-subject infrastructure (§6.5) and may participate in the §8 routing layer as one relay among several, but no operator may occupy a position from which the coordination graph is observable.
+
+---
+
+## 8. Metadata-Privacy Routing
+
+This section delivers OB-2, the coordination-graph privacy of §3. It states the normative requirement (§8.1), the conformance properties any routing layer must satisfy (§8.2), the **AFP Federation Mixnet** (§8.3–§8.7), private route resolution (§8.8), the relationship to honest disclosure (§8.9), and residual limitations (§8.10). The **§8.2 properties are the conformance test**; §8.3–§8.8 define AFP's baseline construction. [AFP-0277] An implementation MAY use another construction, but it MUST satisfy §8.2.
+
+The threat model is explicit and was decided deliberately: the OB-2 adversary includes a **passive observer of the network links between relays** — a transit provider, an infrastructure operator, or a national-scale link observer — not merely a curious party running one piece of infrastructure. AFP's flagship use case is cross-jurisdictional collaboration between identifiable institutions; the existence and intensity of a coordination relationship is itself commercially sensitive, sometimes materially so, and the platform cannot ask a tenant to predict in advance which relationships are sensitive. The routing layer therefore requires endpoint unlinkability, no cleartext relationship in addressing, correlation resistance, and no single trusted relay (§8.2), including mitigation of global passive traffic analysis. This protection is subject to §8.10: membership remains visible, long-horizon statistical disclosure is mitigated but not eliminated, especially in small federations, a coalition of mix-node operators that holds every hop of a packet's path can trace that packet directly (§8.1), and inference and active attacks beyond that are not bounded.
+
+### 8.1 Requirement
+
+[AFP-0501] Tenant↔tenant coordination traffic MUST be routed through a layer that provides the §8.2 properties against a single transport operator, a single relay and a passive observer of the links between relays, under the adversary, traffic and deployment assumptions that §8.2 property 3 requires an OB-2 claim to state. The aim is that none of these parties can learn the pairing (tenant A AID, tenant B AID) of any coordination session, or reconstruct it from timing or volume correlation. The baseline construction does not prove that they learn nothing; the collusion bound below and §8.10 state where it falls short.
+
+**Collusion bound.** A *coalition* is a set of mix nodes whose operators pool what they observe, whether or not the directory lists them under different `operator_aid` values. The stratified topology of §8.4 does not protect a pairing against every coalition. This bound states what it supports. It assumes one directory epoch, paths chosen by the §8.4 route rule, and a coalition that can map the network endpoints that its first and last hops observe to tenant AIDs, as it can when a tenant connects from a known address. Without that mapping, a coalition that traces a packet learns the sender's ingress and the destination value, not the AID pair.
+
+- **Full path.** A coalition that holds all three hops of a packet's path can trace that packet directly: it links the sender's ingress at the first hop to the destination value and the delivery at the last hop, the terminal relay (§8.8). Mixing delay and cover traffic do not prevent this. Tenant cover is loop traffic that returns to its sender (§8.5), so a traced packet delivered to another tenant is real traffic. It shows an attempted contact, though not that a session was accepted or that work was done. The coalition can also attribute to that sender the other packets that it delivers with the same destination value.
+- **Fraction of paths.** The probability that a coalition holds the whole path of a packet is the fraction of valid paths (§8.4) whose three nodes it holds. When every node has its own `operator_aid`, a coalition that holds c₀, c₁ and c₂ of the n₀, n₁ and n₂ nodes in the three layers holds (c₀·c₁·c₂)/(n₀·n₁·n₂) of the paths: one in 27 for one node of three in each layer. A coalition whose nodes carry fewer than three different `operator_aid` values holds no valid path.
+- **Not an upper bound.** This fraction bounds what a coalition learns from below, not from above. For a packet with a hop outside the coalition, linking sender and recipient needs inference across that hop. Each hop that the coalition holds removes that hop's mixing from the inference, and the inference can succeed, for example when few other packets pass the honest hop at the same time or when the coalition knows the other traffic. This specification does not bound that inference, or the active attacks of §8.10.
+- **Repeated traffic.** For a fixed coalition, directory and set of valid paths, with an independent path for each packet, the probability that a coalition whose path fraction is f has directly traced at least one of k real packets of one relationship is 1 − (1 − f)^k: about 0.61 after 25 packets, 0.90 after 60 and 0.99 after 120 for f = 1/27. The two directions of a relationship can have different fractions. Over sustained traffic this probability approaches one for every coalition with f > 0; for f = 0 it stays zero. It is a limit, not a guarantee for any finite session.
+- **Operator independence.** A set of nodes with fewer than three `operator_aid` values holds no valid path. That keeps one or two parties from full-path tracing only if different `operator_aid` values belong to parties that do not pool observations, and it does not stop them from the inference above. The directory cannot establish independence (§8.7).
+
+### 8.2 Properties the routing layer must provide (conformance test)
+
+[AFP-0279] A conforming routing layer MUST provide:
+
+1. **Endpoint unlinkability.** A relay forwarding a message sees, at most, one hop in each direction — never both the originating and terminating tenant of a session.
+2. **No cleartext relationship in addressing.** [AFP-0280] Routing headers and any identifier visible to a relay MUST NOT encode the tenant pair, and MUST NOT be stable across sessions in a way that lets a relay link a tenant over time.
+3. **Correlation resistance.** [AFP-0502] The routing layer MUST provide mechanisms that mitigate correlation of timing and volume by a relay or a passive observer of inter-relay links, and an OB-2 claim MUST state, for each correlation-resistance property it asserts, the threat model, the traffic and deployment assumptions, and the evidence that supports it. In the baseline construction these mechanisms are continuous-time mixing (§8.4) and cover traffic whose rate does not depend on real traffic (§8.5). Calling an observed leak a §8.10 residual does not establish resistance; the evidence has to address the deployment's actual parameters and traffic. A set of relays that holds every relay a message passes through can trace that message directly, and a set that holds some of them can sharpen inference; §8.1 states how far the baseline construction resists such sets, and §8.10 lists what it does not resist. This is the discriminating property and the reason a mixnet, not a simpler relay, is required.
+4. **No single trusted relay.** [AFP-0282] The layer MUST NOT contain a relay whose compromise reveals the graph. This is the §3.2 capability standard applied to the routing layer itself: decentralization of the relay set is required, not optional.
+
+<!-- afp-set:include docs/afp_routing_specification.md -->
+§8.3–§8.8, the AFP Federation Mixnet and private route resolution, are specified in `docs/afp_routing_specification.md`. They keep their section numbers. They are AFP's baseline construction; the §8 preamble and §8.2 state what applies to an implementation that uses another construction.
+<!-- afp-set:end -->
+
+
+### 8.9 Relationship to OB and to honest disclosure
+
+§8.3–§8.8 are the baseline mechanism for OB-2 (§3.1); an OB-2 claim also carries the assumptions and evidence that §8.2 property 3 requires and the disclosures of §8.10. OB-1 (content) does not depend on this section — it is delivered by §5.2 channel encryption in every topology. [AFP-0283] A deployment whose mixnet is not yet operational, or which cannot yet run mandatory cover traffic across a sufficient mix-node set, does not satisfy OB-2 and MUST disclose this per §3.5: such a deployment claims OB-1 and states OB-2 as not-yet-met. Because OB-2 has little value at very small federation sizes (with few tenants there is almost no coordination graph to hide) and accrues value as the federation grows, an honest-disclosure interim during early deployment is consistent with this specification.
+
+### 8.10 Residual limitations
+
+[AFP-0284] Two limitations MUST be disclosed honestly rather than overclaimed:
+
+- **Membership is not hidden.** The mixnet hides *who coordinates with whom*; it does not hide *that a tenant is a federation participant* — a tenant's constant cover-traffic emission to the mixnet is itself observable. For a bounded consortium this is generally acceptable (membership may be public), but it is a real boundary of the guarantee.
+- **Long-horizon statistical disclosure.** Constant cover traffic makes a tenant's emission rate independent of whether it has real traffic to send, but an adversary observing a *small* network over a *long* period can mount statistical-disclosure attacks that mixing and cover traffic mitigate but do not eliminate. Mandatory cover traffic from every tenant (§8.5) is the principal mitigation; the residual is smaller for larger federations. This limitation is shared by all Loopix-family systems and is inherent to the design class.
+
+[AFP-0503] The limits of the §8.1 collusion bound MUST also be disclosed with any OB-2 claim:
+
+- **Coalitions that hold a whole path.** A coalition of mix-node operators can directly trace every packet whose whole path it holds, which is the fraction of packets that §8.1 states. If that fraction is not zero, then over sustained traffic between two tenants, with a fixed directory and independent paths, the probability that it has traced at least one of their packets approaches one. Mixing delay and cover traffic do not lower that fraction. `ob2-baseline-v1` sets no minimum number of independent operators per layer beyond the §8.4 "Layers" constraints, so in a federation with few mix-node operators the fraction can be large.
+- **Operator independence is not verifiable.** The §8.4 route rule keeps one or two parties from full-path tracing only if different `operator_aid` values belong to parties that do not pool observations. The directory cannot show this (§8.7).
+- **Inference beyond whole paths.** The §8.1 fraction is not an upper bound. A coalition that holds some hops of a path removes their mixing and can link packets across the remaining hop by inference, which this specification does not bound. This adds to the long-horizon disclosure above.
+- **Active attacks.** Dropping, delaying, flooding or selectively failing packets, and marking a packet at one hop to recognise it at a later hop, are not bounded by §8.1. Where the destination value travels in the Sphinx header, apart from the payload, a coalition that holds the first and last hops of a path and can mark the payload links the sender's ingress to that destination without the middle hop. The §8.4 route rule keeps one `operator_aid` from holding both positions on a path; it does not stop two colluding operators. Loop cover (§8.5) can reveal some active attacks after they occur; it does not prevent them.
+- **Effect of the route rule.** The §8.4 route rule makes each hop depend on the others, so it changes how traffic spreads over nodes. Its effect on inference at an honest hop has not been evaluated, especially where a few operators run most nodes.
+
+---
+
+## 9. Freedom Safeguards
+
+AFP 0.3.14-draft inherits the six Freedom Safeguards defined normatively in **ZKA v0.9.2-draft §1.6**. They are not re-declared here; this section states only how each bears on AFP.
+
+| # | Safeguard | Bearing on AFP |
+|---|---|---|
+| [AFP-0285] 1 | Predicate Pluralism | AFP carries ZKC compliance bundles (§5.4) but privileges no issuer or predicate set. A tenant's compliance requirements in a federation agreement (§5.5) are that tenant's bilateral choice; AFP defines no canonical or default set — of issuers, of predicates, of root classes, or of **root authorities** (§6.3.1). An implementation MAY ship a default verification policy naming authorities it recommends; that is implementation-side product configuration, and §6.3.1 states normatively that such an entry must be visible to, editable by, and removable by the deployment operating it and is not a default of this specification. Naming an authority in this specification privileges it in no way. |
+| 2 | Minimal Disclosure | Every selective disclosure and every telemetry claim (§6.3) is atomic — one property per proof. AFP message classes (§5.3) carry single-predicate proofs; composite disclosure requires explicit per-predicate consent. |
+| 3 | No Revocability | AFP defines no gate over tenant state for any party. Operator telemetry failure is observe-and-alert, never intervene (§6.6). No AFP message can invalidate, freeze, or redirect a ZKA note. |
+| [AFP-0286] 4 | Open-Source Predicates | Telemetry predicate circuits (§6.3) MUST be open-source, versioned, and published with a public review period, exactly as ZKC §1.4 requires of any predicate. |
+| 5 | Agent Exit Rights | A tenant's withdrawal of its assets to a base layer is a ZKA operation gated by nothing in AFP. Leaving a federation, leaving a managed transport for an appliance (§4.7), and changing operator are all unconditional. AFP adds no exit gate. |
+| [AFP-0287] 6 | Verifier Accountability | The first safeguard to constrain the *counterparty* rather than the operator, and load-bearing for open federation (§5.8). A tenant that requests a compliance proof is a **verifier**: it MUST authenticate the request under a stable KERI identity, and the holder retains a profile-minimized Disclosure Receipt of what was demanded, by whom, and for what purpose (ZKC v0.4.1-draft §5.5–§5.9; AFP §5.9). Anonymous demands are rejected; global linkability requires explicit consent. |
+
+Operator blindness (§3) is an AFP-level invariant in the same spirit as the Safeguards: a structural guarantee, verifiable by inspection (§7.1), not a policy promise.
+
+---
+
+## 10. Open Items
+
+The following seams are not defined by the current AFP interface. [AFP-0288] Implementations MUST respect the stated boundary and MUST NOT silently substitute a local mechanism as though it were AFP.
+
+- **KERI/CESR wire interoperability (§4.4.2).** This version defines its own KEL encoding with KERI semantics. A KERI-native implementation derives different AIDs and digests for the same keys and so cannot authenticate an AFP party, or the reverse. [AFP-0289] A future version that adopts CESR MUST define the migration of existing AIDs and of every identity-dependent vector (§5.2, §6.3.1); until then a CESR-encoded KEL is not an AFP KEL.
+- **Multi-key controller signing (§4.4.2).** This version allows exactly one Ed25519 controller key per establishment event, carries no `kt` or `nt` member, and defines no protocol-level multi-key, weighted, or threshold controller-signature policy; the reserved threshold unions of §6.3.1 are always `"1"`. A tenant root presents one Ed25519 controller key and one valid signature under it, so it has no multisig; AFP neither defines nor attests how custody of that key is shared across devices or parties. [AFP-0500] A future version that adds multi-key controller signing MUST define the threshold members, the signature-set encoding, the verifier rule for a partial signature set, and the migration of existing AIDs and of every identity-dependent vector (§5.2, §6.3.1) before any implementation relies on it.
+- **Tenant-root key recovery (§4.6).** A tenant root that loses both its current and its pre-rotated keys has no protocol recovery in this version. KERI defines no guardian-authored event for a non-delegated AID, and a third party able to change an AID's key state would itself be a takeover path. [AFP-0290] A future design MUST define the authorizing event, its threshold signatures and witness receipts, its effect on pre-rotation commitments, and the verifier rule before any implementation relies on it. Until then, a tenant that loses those keys re-incepts under a new tenant root AID. Entities are recovered through their tenant (§4.2).
+- **ZKA note migration (§4.6).** AFP rotation sequencing and ZKC credential rebinding are specified. The remaining lower-layer Draft seam is the ZKA-owned note-migration proof under ZKA §5.7 (ZKA v0.9.2-draft).
+- **Stranger rendezvous under operator-blindness (§5.8, §8.8, §14).** Two tenants with no *pre-existing* agreement can establish a trust basis through per-interaction ZKC attestation with no agreement (§5.8) or a provisional agreement negotiated by an introduction session (§14), but **both require the parties to be in contact first.** The known-counterparty path bootstraps mixnet rendezvous data from the §5.5 agreement, which strangers lack. Routing first contact through the mixnet without a queryable directory requires a separate discovery/rendezvous layer with its own privacy analysis, or an out-of-band bootstrap. [AFP-0291] It is **out of AFP scope** and MUST NOT be solved by relaxing §8 OB-2. Until such a layer exists, §5.8 and §14 are usable only where first contact is established out-of-band.
+- **Operator ↔ operator federation.** This remains out of scope until at least two independent operators run conforming tenant infrastructure in production and there is a concrete need for cross-operator tenant portability, relay governance, directory governance, billing settlement, or incident coordination. It is not part of current AFP conformance.
+
+  [AFP-0292] A future operator↔operator design MUST NOT create an operator-visible coordination graph, an operator trust bridge for tenant↔tenant session establishment, a shared discovery feed, or any telemetry-sharing path that reveals tenant work. [AFP-0293] It MUST preserve §3 operator blindness, §4 tenant-controlled identity continuity, §6 tenant-pushed telemetry, and §8 OB-2 routing. Until that design exists, AFP deployments remain conforming only for tenant↔tenant, tenant↔operator, and identity-continuity relationships (§1.3); any operator↔operator operational agreement is out of AFP scope and cannot relax AFP requirements for tenant sessions.
+
+- **Multi-vendor conformance program (§1.5.1).** A formal conformance program for the tenant profile — published tenant-profile test vectors as a normative gate, cross-runtime CI that fails closed on drift, program governance, and certification — is deferred until a **second serious implementer commits**. Until that milestone, §1.5.1 states the tenant conformance profile normatively but does **not** gate it on vectors: conformance is asserted against the specification text and judged bilaterally by counterparties and verifiers (§5.5, §5.8, §6.3.1). Operator-blindness claims are held to §3.5 honest disclosure and the §7.1 auditability requirement, not to an unavailable vector suite. The AFP-KDC v1.0.2 conformance vectors (Appendix A) illustrate the required shape of such a suite.
+
+  [AFP-0294] If created, the program MUST NOT become a gate on *who may federate*. [AFP-0295] Vectors test the §1.5.1 obligations and nothing more; counterparty acceptance remains bilateral verifier policy (§6.3.1), not a certification grant; and the program MUST NOT create a conformance mark, implementer registry, or published conformance feed (§1.2). [AFP-0296] Standing as a §6.3.1 root authority is likewise not a certification grant and MUST NOT be gated on this program.
+
+- **Transparency-log upgrade for the ADAMAS product line (§6.3.1).** Moving ADAMAS builds into a transparency log would upgrade that product line from `root:publisher-manifest` to `root:build-provenance` — a strictly stronger, third-party-verifiable position inside the same taxonomy and under the same authority root, requiring no revision to this specification and no change to any verifier's accepted authority. Until then the product line attests as self-attested at the platform layer, with the mandatory §6.4 public-sample binding and the §3.5 disclosure duties of §6.3.1. The same upgrade path is open to any authority on identical terms.
+
+- **Out-of-band authority binding material (§6.3.1).** The AID↔legal-entity binding of §6.3.1 is established out-of-band. An authority's key ceremony, its published trust material, and any practice statement or relying-party terms it publishes are companion work owned by that authority; AFP defines neither their form nor their content and requires none of them of any verifier. It grants them normative standing in exactly one respect and no other: §6.3.1 states verifier **acceptance conditions** over the trust material a verifier elects to accept — the pinned witness set and threshold for the authority's KEL, and, under `root:publisher-manifest`, the self-attestation characterization. A verifier's obligations under §6.3.1 — including the stale/revoked determination — are dischargeable **for a KERI-rooted authority** from that authority's own KEL and the KELs it anchors (§4.2, §4.4, §4.6); the `root:build-provenance` and `root:tee-attestation` classes keep their existing verifier-pinned log-policy and vendor-root material. In no class is an authority-published advisory or status feed on the normative path.
+
+---
+
+## 11. Canonical Specification
+
+The AFP specification is the following set of documents. Together they are the sole normative AFP specification.
+
+| Document | Path | Normative for |
+|---|---|---|
+| AFP Specification (this document) | `docs/afp_specification.md` | every conforming implementation and tenant (§1.5, §1.5.1) |
+| AFP Federation Mixnet | `docs/afp_routing_specification.md` | §8.3–§8.8, under the rule of §8 |
+| `afp.introduction` profile | `docs/afp_introduction_profile.md` | §14, when an implementation claims `afp.introduction` |
+| AFP-KDC v1.0.3 | `docs/kdc_specification.md` | Appendix A, when an implementation derives keys using AFP-KDC |
+
+Section numbers are shared across the set: a section keeps its number in whichever document holds it, and this document keeps a heading for each section held elsewhere. Each construct is defined in exactly one document of the set, and that document controls it. This document controls the membership of the set and the conformance scope of §1.5. AFP-KDC has its own version line (Appendix A); a document that depends on it cites an AFP-KDC version, not an AFP version.
+
+Other AFP materials are non-normative unless a section of this set explicitly incorporates them by reference. These include the AFP implementation-security guide (`docs/afp_implementation_security_guide.md`), drafts, scope notes, migration notes, decision records, and implementation documents. [AFP-0297] An implementation MUST NOT infer wire semantics, conformance requirements, or exceptions from those materials. If any of them conflicts with this set, this set controls.
+
+---
+
+## 12. Bilateral Session Core
+
+This section group is **normative** and defines AFP's shared bilateral-session substrate once: two verified instances open a session, bind it to KERI identities, exchange signed atoms under bilateral policy, resolve disputes bilaterally with an optional pre-agreed arbiter, commit with both signatures and an optional DLT anchor, and inherit the Freedom Safeguards. AFP's §5 tenant↔tenant work exchange uses this core; PRP and VXP are **profiles** (§13) over it.
+
+The core composes §4 identity, §3 operator blindness, §8 routing, and §9 safeguards into the session abstraction that profiles consume. Section 12 is the canonical profile-facing statement of shared session constructs; §5 applies them to work exchange.
+
+### 12.1 The bilateral session
+
+A **bilateral session** is the unit of all AFP-mediated tenant↔tenant interaction between two verified conforming instances (§1.2). Tenant↔operator telemetry follows §6.1 instead. Where — and only where — a party requires instance attestation, "verified" is verified under a root class and root authority that party accepts (§6.3.1); trust basis (a) below imposes no attestation requirement of itself — whether the agreement carries one is bilateral (§5.5) — and this section imposes none. It is, by construction:
+
+- **bilateral** — exactly two principals, one entity in each of two tenants. N-party interaction is composed from bilateral sessions (a star or mesh of them, profile-defined; §13.3), never run as a single N-way protocol;
+- **mutually authenticated** — each side verifies the other's delegated AID and its delegation chain to the counterparty tenant root AID under §4.4 event authorization and the §4.5 witness policies (§5.2 step 2);
+- **end-to-end encrypted** — every payload is ciphertext to any transport operator (OB-1, §3.3);
+- **metadata-private** — routed through the §8 mixnet so no operator or link observer learns the tenant pairing (OB-2);
+- **trust-anchored** — every session is anchored to one of three trust bases (§5.1, §5.8, §14): **(a)** a **pre-existing** bilateral federation agreement (§5.5), whose policy block governs the session; **(b)** a **provisional** agreement that an `afp.introduction.v1` session negotiates and both parties sign before any value interaction (§14); or **(c)** per-interaction ZKC compliance attestation with **no** agreement (§5.8), whose accepted attestation and declared purpose play the policy-block role. Cases (b) and (c) permit interaction without a pre-existing agreement: case (b) produces a signed provisional agreement and case (c) produces none. [AFP-0298] Mutual authentication, end-to-end encryption, OB-2 routing, and context binding are REQUIRED for all three. [AFP-0299] A profile MAY restrict itself to the agreement path; PRP and VXP do;
+- **context-bound** — every signed atom and every proof in the session binds the session context of §5.2 step 4.
+
+A profile (§13) does not define a new session; it runs *inside* a bilateral session, contributing its own atom kinds and state machine while the session establishment, identity, transport, dispute, commitment, envelope, and safeguard machinery are the core's. The introduction tier (§14) is the one place a profile is permitted to drive session *opening* itself, and only because closing the stranger-onboarding gap requires it; the carve-out is bounded to that profile and stated normatively in §14.2.
+
+### 12.2 Session establishment, lifecycle, and timeout
+
+#### 12.2.1 The session atom
+
+A bilateral session is durable, queryable AKG state, represented by a core **SessionAtom** (`afp:session:v1`). [AFP-0300] A profile MAY specialize/extend this atom (PRP's `prp:session:v2` and a VXP transaction context are profile specializations), but every profile session carries the core fields:
+
+```typescript
+interface AfpSessionAtom {
+  kind: 'afp:session:v1';
+  id: string;                       // session id; component of the session context (§5.2 step 4)
+
+  // Principals — KERI-aligned (§4). The session is between two ENTITY delegated AIDs,
+  // each verified up to its TENANT root AID.
+  initiator: AfpPartyRef;
+  responder: AfpPartyRef;
+
+  // Governing bilateral federation agreement (§5.5) and the profile this session runs.
+  agreement_ref: string;            // AFP bilateral federation agreement id
+  agreement_version: string;        // pinned at session open
+  profile: string;                  // registered profile name (§13.2), e.g. 'prp' | 'vxp' | 'work'
+  profile_policy_hash: string;      // hash of the profile policy block exchanged at open
+
+  // Lifecycle (§12.2.2)
+  status: AfpSessionStatus;
+
+  // Timing / timeout (§12.2.3)
+  opened_at: uint64;                // §5.2: RFC 8785/JCS JSON integer token, 0..253402300799; exact Unix seconds
+  expires_at: datetime;             // hard session timeout; REQUIRED
+  closed_at?: datetime;
+
+  // Binding
+  session_context: string;          // exact SHA-256 / X_ construction in §5.2
+}
+
+interface AfpPartyRef {             // the canonical session identity binding (§12.3)
+  tenant_aid: string;               // §4 tenant root AID (self-certifying)
+  entity_aid: string;               // §4 entity delegated AID — the acting principal
+  kel_event_dig: string;            // KEL event the signing key is pinned to (key-state pinning)
+  signature: string;                // KEL-anchored signature over the atom content hash
+}
+
+enum AfpSessionStatus {
+  PROPOSED = 'proposed',            // open requested, not yet accepted
+  OPEN     = 'open',                // mutually authenticated and signed by both parties; §5.2 channel establishment follows
+  ACTIVE   = 'active',              // profile exchange in progress
+  CLOSING  = 'closing',             // graceful teardown initiated
+  CLOSED   = 'closed',              // completed normally
+  EXPIRED  = 'expired',             // expires_at reached before close
+  ABORTED  = 'aborted'              // rejected, or torn down on error or by either party's exit (§12.8, Safeguard 5)
+}
+```
+
+[AFP-0301] Both `initiator` and `responder` are REQUIRED in every `afp:session:v1` wire record. They are identity bindings, not late-added fields. The party-reference objects are independently authenticated against their KELs and are not themselves members of the stable session content defined below, which avoids making either signature cover itself. Each signature covers the same stable session identity, including `session_context`, while §5.2 makes that signed digest a commitment to the exact two entity AIDs carried by the party bindings. A recipient establishes the binding by authenticating those references and recomputing the context; no acceptance transition may replace, omit, or reinterpret either reference.
+
+**Stable session content (normative).** The `afp:session:v1` record is an AFP-authored JSON artifact under §6.3.1. Its **stable session content** is the JSON object with exactly these nine members, each carrying its wire value: `kind`, `id`, `agreement_ref`, `agreement_version`, `profile`, `profile_policy_hash`, `opened_at`, `expires_at`, and `session_context`. `initiator`, `responder`, `status`, and `closed_at` are not members. Both party signatures are computed over the same bytes:
+
+```text
+content_hash = "D_" || lowercase_hex(SHA-256(RFC8785_JCS_UTF8(stable_session_content)))
+signed_bytes = ASCII(content_hash)                       // exactly 66 octets
+signature    = lowercase_hex(Ed25519(signer_key, signed_bytes))
+```
+
+`signature` is the `AfpPartyRef.signature` of the signing party, made with the key pinned by that reference's `kel_event_dig` and verified under §4.4.1. `opened_at` keeps its §5.2 JSON integer encoding. [AFP-0302] Every other member value is a JSON string, so RFC 8785 serializes it as its JSON string token, and implementations MUST NOT re-encode any member before hashing.
+
+`expires_at` and `closed_at` are `datetime` values. On this record a `datetime` is a JSON **string** of exactly 20 ASCII characters, `YYYY-MM-DDTHH:MM:SSZ`, naming a whole-second UTC instant from `1970-01-01T00:00:00Z` through `9999-12-31T23:59:59Z`, the same range as `opened_at`. [AFP-0303] The date MUST exist in the proleptic Gregorian calendar, the second field MUST be `00`–`59`, and `T` and `Z` MUST be uppercase. [AFP-0304] `expires_at` is REQUIRED and MUST be strictly later than `opened_at`; consequently no session can open at the last representable second. `closed_at` is absent until the session reaches a terminal state, is local unsigned lifecycle metadata, and is never a stable-content member; JSON `null` is not an encoding of an absent `closed_at`. [AFP-0305] A recipient MUST reject a JSON number, `null` in place of `expires_at`, fractional seconds, a numeric UTC offset, a lowercase designator, a leap second, an invalid calendar date, an out-of-range instant, or an `expires_at` at or before `opened_at`. [AFP-0306] It MUST do so before installing any session state, and MUST NOT round, coerce, or normalize the value. [AFP-0307] A session atom whose `expires_at` is a JSON number is non-conforming: its parties MUST re-propose the session and MUST NOT translate the value.
+
+`docs/afp_session_stable_content_v1.json` is the normative machine-readable conformance fixture for this rule. [AFP-0308] Every conforming runtime MUST reproduce its stable-content JCS preimage, `content_hash`, and initiator Ed25519 signature from the published proposal and synthetic seed, and MUST reject every listed rejected `expires_at` and `closed_at` value or raw JSON token.
+
+A party reference's `kel_event_dig` is the digest of the signer's latest establishment event (`icp`, `dip`, or `rot`; §4.4) at the time it signs. An interaction event never pins key state: it does not change the key, so a pin to an interaction would make a genuine signature appear superseded.
+
+[AFP-0309] `signature` has one narrowly defined proposal sentinel: in `PROPOSED`, `initiator.signature` MUST be a non-empty KEL-anchored signature and `responder.signature` MUST be exactly the empty string. [AFP-0310] Before producing that proposal, the initiator MUST authenticate the responder's tenant root, delegated entity AID, current `kel_event_dig`, and witness policies (§4.5) through its KEL/delegation chain and place those exact identity values in `responder`; it then computes `session_context` from the two authenticated entity AIDs, ID, and `opened_at`, and signs the stable content containing that context. [AFP-0311] A recipient MUST first verify the initiator signature and the initiator KEL's witness policies (§4.5), then verify that the unsigned `responder` binding exactly names its own authenticated tenant root, delegated entity AID, and current KEL event. [AFP-0312] A mismatch, an absent responder binding, or any responder proposal signature other than the exact empty string MUST be rejected. [AFP-0313] Only after those checks MAY the recipient recompute `session_context` from the atom's authenticated party bindings, ID, and `opened_at`; it MUST reject a mismatch.
+
+[AFP-0314] On acceptance (`OPEN`), the responder MUST preserve every stable-content value and both unsigned party bindings byte-for-byte, replace only its empty `signature` with its own KEL-anchored signature over the same stable content hash, and set `status` to `OPEN`. [AFP-0315] An `OPEN` or later session MUST carry two non-empty, valid party signatures; an initiator confirming acceptance MUST reject a changed echoed initiator reference, responder binding, content hash, session context, or responder signature. These checks reject replay of a proposal to a different responder even where transport routing delivers it; the uniqueness rule below rejects replay to the same responder.
+
+**Session uniqueness (normative).** The §5.2 context commits to the two entity AIDs, `id`, and `opened_at`, but not to `agreement_ref`, `agreement_version`, `profile`, `profile_policy_hash`, or `expires_at`. Uniqueness is therefore enforced by the responder, so that one `session_context` names exactly one responder-signed session:
+
+1. [AFP-0316] A responder MUST keep a replay record of every proposal it signs, holding at least the initiator entity AID, `id`, and `session_context`, for at least that session's `expires_at` plus its maximum accepted clock skew. [AFP-0317] The record MUST survive a restart for that period.
+2. [AFP-0318] Before signing or changing any session state, a responder MUST reject a proposal whose (initiator entity AID, `id`) pair or `session_context` matches a record, whether the recorded session is live or terminal. A byte-identical replay of an accepted proposal is such a proposal. [AFP-0319] A proposal MUST NOT displace, rewind, relabel, or share state with a session the responder already holds.
+3. [AFP-0320] A responder MUST reject a proposal whose `expires_at` is at or before its current time, or whose `opened_at` is later than its current time plus its maximum accepted clock skew. This bounds how long a record must be kept: once `expires_at` passes, a replay is rejected as expired.
+4. [AFP-0321] An initiator MUST NOT reuse an `id` with the same responder.
+
+[AFP-0322] An implementation MAY be stricter, for example by refusing an `id` already used with any initiator; the Python reference does so because it keys session state by `id`. [AFP-0323] A verifier that relies on the agreement, version, profile, policy hash, or expiry governing a context-bound artifact MUST take them from the mutually signed session atom, whose content hash the §5.2 channel transcript binds, not from the context.
+
+The `profile` field is recorded in the session so the transport layer and the counterparty know which atom kinds and state machine govern the exchange. `afp:session:v1` carries no profile-specific fields; those live in the profile's own atoms.
+
+#### 12.2.2 Lifecycle
+
+The core session lifecycle is the part of every profile's state machine that concerns *the session itself*, distinct from the profile's *exchange* state machine (which the profile defines over `ACTIVE`):
+
+```
+ propose ──▶ PROPOSED ──accept──▶ OPEN ──begin──▶ ACTIVE ──close──▶ CLOSING ──profile reports done──▶ CLOSED
+                │                  │                │                 │
+                └──────────────────┴────────────────┼─────────────────┘
+                                                    │  reject, or either-party exit / error (§12.8 SG-5)
+                                                    ▼
+                                                 ABORTED
+   (EXPIRED reachable from PROPOSED, OPEN, ACTIVE and CLOSING when expires_at passes;
+    CLOSED, EXPIRED and ABORTED are terminal: no transition leaves them)
+```
+
+1. **Propose / accept.** The initiator proposes a session under a named profile and a pinned federation-agreement version using the responder-binding and signature invariants of §12.2.1; the responder accepts (→ `OPEN`) or rejects (→ `ABORTED`). Acceptance completes mutual authentication: the session is now signed by both parties, and the §5.2 channel is established from that mutually signed session.
+2. **Activate.** On the first profile exchange message the session moves to `ACTIVE`. The profile's own state machine (PRP Compare→…→Commit; VXP Intent→…→Settlement) runs entirely within `ACTIVE`.
+3. **Close.** When the profile reports its exchange complete, the session moves `CLOSING → CLOSED`. A core **CommitmentAtom** (§12.6), where the profile produces one, is the artifact that justifies a clean close.
+4. **Abort / expire.** [AFP-0324] Either party MAY exit at any time (§12.8, Safeguard 5) — the session moves to `ABORTED`, leaving whatever signed atoms exist as the durable record. `expires_at` elapsing moves any non-terminal session to `EXPIRED`. No core transition can be forced by an operator (§12.8, Safeguard 3).
+
+[AFP-0325] A profile MAY name additional terminal annotations for its exchange (e.g. PRP `ESCALATED`); those describe a session that closes or aborts at the core level — the core recognizes only the states above.
+
+#### 12.2.3 Timeout
+
+[AFP-0326] Every session MUST carry an `expires_at`. A session that has not reached a terminal state by `expires_at` is `EXPIRED`; a fresh session must be proposed to continue. [AFP-0327] Profiles MAY set finer-grained per-phase deadlines (PRP `evidence_deadline_seconds`, VXP offer `valid_until`) within the federation agreement's policy block, but the core session timeout is the outer bound and is non-optional. Timeout is **observe-and-resolve**, never operator intervention: an expired session simply ends; nothing in tenant state is frozen or rolled back (§12.8, Safeguard 3).
+
+### 12.3 Identity binding for sessions
+
+Session identity binding is **§4 applied to the session**, stated once here so profiles cite it rather than re-derive it:
+
+- The two session principals are **entity delegated AIDs** (§4.2). Each is authenticated by verifying its KEL to its **tenant root AID**, every event under §4.4 event authorization and against the witness policies §4.5 requires for it, exactly as §5.2 step 2 specifies. [AFP-0328] A verifier MUST reject a principal whose KEL does not open with a `dip` event naming the claimed tenant root AID and anchored in that tenant's KEL, with every rotation anchored and the delegation not revoked (§4.2). [AFP-0329] It MUST verify the tenant root KEL itself, which opens with an `icp` event, under the same rules. A self-rooted (`icp`) AID is never a session principal, whatever tenant it claims, and an empty, unverifiable, or delegated tenant KEL establishes no tenant. This verification is **identical for both trust paths**: in a bilateral session (§5.5) the two AIDs are carried in the agreement; in an open-federation session (§5.8) they are the AIDs attested at first interaction. The KEL-to-root verification, and everything below, is the same in either case — open federation changes the *provenance* of the two AIDs, not how they are authenticated or bound.
+- Every signed session atom carries both `AfpPartyRef` bindings (§12.2.1): the tenant root AID, the acting entity delegated AID, the **`kel_event_dig`** pinning the key state the signature is bound to, and a **KEL-anchored signature** over the atom's stable content hash. The sole exception is the responder's exactly-empty signature sentinel while a session is `PROPOSED`; the responder binding remains KEL-authenticated and its entity AID is committed by the initiator-signed `session_context`.
+- **Live acceptance versus durable records.** [AFP-0330] At live acceptance — session proposal, acceptance and confirmation, envelope receipt, sealed-channel establishment, §5.9 APR signer-key resolution, payment-quote acceptance, and countersigning a commitment — a signature's `kel_event_dig` MUST name the signer's current establishment event, judged against KEL state obtained and retained as §4.5 requires; a signature bound to a superseded KEL event MUST be rejected (the `kel_keystate_stale` condition the profiles surface). A **durable record** — a §12.6 commitment, or a §12.5 divergence record or arbiter decision, presented later as evidence — is instead verified against the key state its `kel_event_dig` pins. [AFP-0331] The verifier verifies the signer's KEL in full (§4.4, §4.5, and the §4.2 anchors), resolves the key set established by the pinned establishment event, and checks the signature under it; a pin that names no establishment event of the verified KEL MUST be rejected. A later rotation does not void a durable record, and neither does a later revocation of the signer's delegation, so neither can be used to repudiate it. [AFP-0332] Durable verification establishes which key state signed a record, not when it was signed: a party that must rely on a record against a later compromise of that key SHOULD anchor it (§12.6) or obtain the counterparty's acknowledgement before the rotation or revocation.
+- The **session context** is the exact §5.2 SHA-256 `X_` qualified digest of the two entity AIDs, session ID, and canonicalized signed `opened_at`; it remains verbatim in the AFP atom, envelope, and presentation-context preimage. ZKA's field-valued bundle, ZKA/Pay transaction, binding, and ZKA/Coord context slots carry its one canonical nonzero big-endian BN254 projection from §5.2. [AFP-0333] Profiles MUST bind that exact representation at each boundary and MUST NOT define a parallel session context or compare the unlike wire encodings directly.
+- A ZKC v0.4.1-draft presentation additionally satisfies §5.9: the verifier returns a proof-authenticated credential-subject AID equal to the presenting `AfpPartyRef.entity_aid`, the APR signer key resolves through the requesting party's current KEL, and its `proof_context` is the current AFP v2 SHA-256-to-BN254 presentation scalar incorporating this session context, active presentation profile, any AFP scope policy, and the verifier-selected trust-flow purpose. ZKA v0.9.2-draft accepts that distinct value only through its authenticated AFP-presentation ZKC context mode; it does not replace the bundle, transaction, or Coord session context. Known-counterparty bilateral flows default to anonymous and may accept scoped→anonymous downgrade when continuity is unnecessary; they never gain linkability without explicit consent.
+- Cross-tenant work is attributed to the **entity** delegated AID and signed with that entity's current KEL signing key (§4.4). The session never addresses HyperTalk sessions or internal users (§2.1); the entity is always the principal that crosses the boundary.
+
+[AFP-0334] A profile's party reference (PRP `PartyRef`; VXP `created_by: EntityAID` plus the §1.3 derivation) MUST use `AfpPartyRef`; a profile carries no additional identity machinery.
+
+### 12.4 NATS namespace ownership
+
+**AFP owns the federation subject tree.** No profile defines a standalone namespace. The canonical tree is:
+
+```
+afp.{tenant}.{profile}.*
+```
+
+where `{tenant}` scopes the subtree to a tenant and `{profile}` is a registered profile name (§13.2). Concretely:
+
+```
+afp.{tenant}.work.*            # base work-exchange behavior (the §5.3 message classes)
+afp.{tenant}.session.*         # core session lifecycle (propose / accept / close / status)
+afp.{tenant}.prp.*             # PRP profile subtree
+afp.{tenant}.vxp.*             # VXP profile subtree
+afp.{tenant}.telemetry.*       # tenant↔operator telemetry (§6.5) — operator-facing, not a bilateral profile
+```
+
+Normative rules:
+
+1. [AFP-0335] A profile's subjects MUST live under `afp.{tenant}.{profile}.*` and nowhere else. Standalone top-level namespaces such as bare `vxp.*` or `prp.{org}.*` are **non-conforming**.
+2. [AFP-0336] A profile name occupies exactly one `{profile}` label and MUST be registered (§13.2) before its subtree is used. Registered means published (§13.3) or recognized bilaterally in the governing agreement. [AFP-0337] A party MUST refuse to propose, accept, send, or receive a session under a profile it has not registered.
+3. [AFP-0338] The subjects MUST remain metadata-private under §8: the `{tenant}` label and any subject string visible to a relay is carried only inside Sphinx-wrapped packets and MUST NOT be a stable cleartext identifier of the tenant pair (§8.2 property 2). The tree above is the *logical* namespace; its on-the-wire form is the routing layer's concern.
+4. `{tenant}` is the **sending** party's own tenant: a tenant publishes only into its own subtree, and a counterparty's messages arrive from the counterparty's subtree. The label is exactly one token. It is the sending tenant's root AID with the `_` after the derivation code written as `-` (for example `E-<hex>`), drawn only from `A`–`Z`, `a`–`z`, `0`–`9`, `_`, `:`, and `-`. [AFP-0339] A label that is empty or contains the separator `.` or a wildcard (`*`, `>`) MUST be rejected, never escaped, so that every subject parses back to exactly the tenant, profile, and leaves it was built from.
+
+### 12.5 Bilateral dispute and arbiter model
+
+This dispute model is part of the bilateral core and applies to every profile.
+
+**Primary — bilateral-only, no operator mediation.** A dispute within a bilateral session is resolved **bilaterally**, between the two principals, or not in-protocol at all. There is **no operator-mediated dispute**: the operator of any AFP transport cannot adjudicate, freeze, reverse, or force any outcome. This is **Safeguard 3 (No Revocability)** made concrete at the session layer (§12.8): a core CommitmentAtom (§12.6) is valid only with *both* parties' KEL-anchored signatures; no admin, governance, or operator key can produce or invalidate one. When the two parties cannot agree in-protocol, the session aborts/escalates with a **signed divergence record** (the profile's dispute atoms) as the durable artifact, and the parties resolve off-protocol — through their own entities, then the federation agreement's governance process — and, failing that, sever the relationship. Exit is unconditional (§12.8, Safeguard 5).
+
+**Optional — a pre-agreed third-party arbiter.** [AFP-0340] A federation agreement (§5.5) MAY name, **in advance**, a single arbiter — a third entity AID, itself a verified conforming instance (§1.2) — to break a tie. The two parties decide bilaterally what verification they require of the arbiter, exactly as for any counterparty; this section imposes no instance-attestation requirement on an arbiter and gives no attestation authority any standing over a dispute. The arbiter:
+
+- is a **specific, pre-agreed AID** named in the agreement (e.g. a multi-site trial's coordinating center, a consortium secretariat), never selected at dispute time, never discovered from a marketplace, never TVF-ranked;
+- receives the evidence the two parties already exchanged, over its own bilateral sessions with each;
+- issues a signed decision — but **cannot force a commitment**. Even an arbiter's decision requires *both* parties' counter-signatures on the resulting CommitmentAtom (or the session aborts). The arbiter's authority is exactly and only what the two parties granted it in writing in the agreement.
+
+[AFP-0341] For a *monetary* leg (a VXP concern), an arbiter MAY act as a co-signer on a pre-agreed 2-of-3 escrow release — able to break a tie only *within the funds the parties escrowed*, never against base-layer custody (Safeguard 5). This is the one arbiter capability that touches value, and it is bounded by what the parties escrowed in advance.
+
+There is **no global arbiter registry, no `min_tvf_level`, no capability query, and no random-from-pool selection** (§1.2). [AFP-0342] A profile MAY add profile-specific escalation steps (PRP's entities→governance ladder, VXP's per-leg breach conditions) on top of this model, but the bilateral-only primary path, optional pre-agreed arbiter, and no-forced-outcome guarantee are core requirements.
+
+### 12.6 Commitment and optional-anchor primitive
+
+Profiles end an interaction with a bilaterally signed commitment to an agreed outcome, chained for replay resistance, with an **optional** DLT anchor. The shared primitive is:
+
+#### 12.6.1 Bilateral commitment
+
+A core **CommitmentAtom** (`afp:commitment:v1`) is the record that two principals agreed to an outcome:
+
+```typescript
+interface AfpCommitmentAtom {
+  kind: 'afp:commitment:v1';
+  id: string;
+  session_ref: string;                 // the afp:session:v1 this commits
+
+  outcome_root: string;                // Poseidon2 commitment to the agreed outcome
+                                       // (profile-defined: PRP reconciled-state root; VXP settled-legs root)
+  profile: string;                     // which profile produced this outcome
+
+  // Bilateral signatures — BOTH required (§12.5, Safeguard 3)
+  initiator_signature: AfpCommitSignature;
+  responder_signature: AfpCommitSignature;
+
+  // Chaining — replay-resistant ordered history per AID-pair
+  previous_commitment_ref?: string;
+  sequence_number: number;             // monotonically increasing per AID-pair
+
+  anchor_ref?: string;                 // afp:anchor:v1, if anchored (§12.6.2)
+
+  // Optional pre-agreed arbiter co-signature (§12.5), present only if an arbiter acted
+  arbiter_signature?: AfpCommitSignature;
+}
+
+interface AfpCommitSignature {
+  signed_by: string;                   // tenant/entity AID
+  kel_event_dig: string;               // pins key state at signing (§12.3)
+  signature: string;                   // Ed25519, KEL-anchored
+  signed_at: datetime;                  // observational metadata; not in signature payload
+}
+```
+
+Normative properties:
+
+- [AFP-0343] **Both signatures are REQUIRED.** A CommitmentAtom with one signature is not a commitment. No operator or arbiter signature substitutes for a party signature (§12.5).
+- **`kel_event_dig` names the signer's latest establishment event** at signing, exactly as for a party reference (§12.2.1). The same holds for every `AfpCommitSignature`, including dispute records, arbiter decisions (§12.5), and payment-quote signatures (§15).
+- **Chaining.** `previous_commitment_ref` + a per-AID-pair monotonic `sequence_number` form a signed, ordered, replay-resistant history between the two AIDs. A gap or non-monotonic sequence is a detectable error (the profiles' `sequence_mismatch`).
+- **Outcome opacity.** The atom commits to an `outcome_root` (a Poseidon2 commitment), not to the cleartext outcome — minimal disclosure (§12.8, Safeguard 2). What the root commits to is profile-defined.
+
+[AFP-0344] A profile's commitment atom (PRP `prp:commitment:v2`; a VXP `SettlementAtom`) is a specialization of this primitive: it MAY add profile-specific fields (PRP `bilateral_metrics`, VXP `legs[]`) but MUST carry the bilateral-signature, chaining, and outcome-root machinery defined here.
+
+#### 12.6.2 Optional anchor
+
+Anchoring is **optional**. The protocol is fully functional with bilateral KEL-anchored signatures alone, which already give a signed, ordered, replay-resistant history. [AFP-0345] For records whose disputes might later be adjudicated by a party outside the bilateral relationship (a regulator, an auditor), a commitment MAY be anchored to a DLT for an independent, tamper-evident timestamp:
+
+```typescript
+interface AfpAnchorAtom {
+  kind: 'afp:anchor:v1';
+  id: string;
+  commitment_ref: string;
+
+  chain: string;                       // e.g. 'ethereum:arbitrum' | 'ethereum:base' | 'ethereum:optimism'
+  via: 'apl';                          // the anchoring rail; the sole registered value is
+                                       // APL (ADAMAS Payment Layer). This literal is a
+                                       // vendor-named value in a wire format — generalizing
+                                       // it is a wire change, tracked as a §10 open item.
+  transaction_id: string;
+  block_number: number;
+  block_timestamp: datetime;
+
+  anchored_data: {                     // hashes only — never atom content
+    commitment_hash: string;
+    outcome_root: string;
+    parties: string[];                 // AIDs, hashed for privacy
+    sequence_number: number;
+  };
+  inclusion_proof: string;             // either party verifies independently
+}
+```
+
+- [AFP-0346] **Ethereum L2 (Arbitrum / Base / Optimism) via APL is the mandatory baseline** — a conforming deployment that anchors MUST support at least one Ethereum L2 through APL. Aztec, Namada, and Penumbra remain non-baseline anchor targets for AFP profiles until an APL deployment explicitly wires the rail and claims it.
+- **Only hashes are anchored** — the commitment hash, outcome root, hashed party AIDs, and sequence number. Never atom content. The anchor is a tamper-evident external timestamp, nothing more.
+- **No-anchor is conformant** and is the default for low-stakes state.
+
+A profile's anchor policy (PRP `policy.anchor.mode`, VXP channel `settle_to`) selects *when* to anchor; the anchor atom and the Ethereum-L2-baseline rule are the core's.
+
+### 12.7 The federation bundle wire format — session envelope over ZKA bundle
+
+For substantive ZKA exchanges, AFP uses one bundle ownership rule:
+
+> **ZKA owns the cryptographic bundle; AFP owns the session envelope.**
+>
+> - The **ZKA Compliance Bundle `zka:bundle:v1`** (ZKA v0.9.2-draft §5.4) is the *cryptographic* bundle: it carries the ZKA/Pay transaction proof (where present), ZKC v0.4.1-draft `zkc:proof:v2` anonymous/scoped proofs or explicitly-consented linkable `zkc:proof:v1` proofs, the applicable identity/presentation binding proof, **and the ZKA/Coord recursive work-attestation proof**. AFP does not introduce a replacement bundle version. [AFP-0347] At least one of `transaction` or `coord_proof` MUST be present; compliance alone is `EMPTY_BUNDLE`.
+> - **AFP owns the session envelope `afp:envelope:v1`**: the construct that carries a `zka:bundle:v1` across a tenant boundary *within a bilateral session*, binding it to the session context (§12.3) and routing it on the namespace of §12.4. The envelope is session-level framing; the bundle is cryptographic payload.
+> - [AFP-0348] A profile MUST NOT author a separate bundle wire format. It places a substantive ZKA bundle inside an AFP envelope, or uses the core native credential-only carrier of §12.7.2; `vxp:coordbundle:v1` and PRP-specific bundle wrappers are non-conforming.
+
+```typescript
+interface AfpEnvelope {
+  kind: 'afp:envelope:v1';
+  session_ref: string;                 // the bilateral session (§12.2) this crosses within
+  session_context: string;             // exact §5.2 X_<64 lowercase hex> digest (§12.3)
+  profile: string;                     // profile placing the envelope (e.g. 'vxp' | 'prp' | 'work')
+
+  bundle: ZkaBundle;                   // zka:bundle:v1; metadata.context is the §5.2 BN254 projection
+  bundle_version: 'zka:bundle:v1';
+
+  message_class: string;               // which AFP message class / subject this rides (§5.3, §12.4)
+  generated_at: datetime;
+  expires_at: datetime;
+}
+```
+
+For `afp:envelope:v1`, verification is two-layer and unambiguous: AFP verifies the **envelope** (its canonical `X_` `session_context` matches the live session, the envelope has not expired, and the `profile`/`message_class` are valid for the session); ZKA verifies the **bundle** (every proof inside `zka:bundle:v1` — transaction, compliance, binding, coordination — verifies, and its required context bindings are valid). [AFP-0349] Before invoking ZKA, AFP MUST derive the exact §5.2 canonical nonzero BN254 projection from that authenticated `X_` digest. [AFP-0350] The bundle `metadata.context`, transaction-level bundle context, binding context, and ZKA/Coord receipt context MUST equal that projected field value in every AFP flow, including `pay`; malformed, noncanonical, zero, out-of-field, or mismatched values are rejected before the ZKA callback. The `pay` profile additionally derives a distinct `interaction_context` from the same projected session digest and the §15.3 quote hash — computed over signature-free quote content, before either signature (§15.4) — without changing `afp:envelope:v1` or replacing its original `X_` value.
+
+ZKC proof context is the sole deliberate semantic split. For a current AFP 0.3.14-draft presentation, AFP supplies ZKA v0.9.2-draft with the caller-authenticated §5.9 v2 digest and selects ZKA's fixed AFP-presentation ZKC context mode. ZKA then requires every contained ZKC envelope and its verified `proof_context` public input to equal that value under the fixed profile `afp:zkc-presentation-context:v2`. The shared-session legacy mode remains available only for explicitly selected older family tuples and uses the same §5.2 field projection as the other ZKA session members; there is no fallback, no silent conversion from v1, and no API that lets a caller pair an arbitrary alternate profile string with an alternate context. AFP, not ZKA, derives the v2 digest because AFP alone owns the authenticated presenter AID, APR verifier AID, scope policy, profile, and trust-flow purpose. The ZKA bundle kind, wire schema, and context field width do not change. No proof system lives in the AFP layer: AFP frames and binds; ZKA verifies substantive bundles and ZKC verifies native credential presentations. The native path of §12.7.2 does not invoke a ZKA bundle verifier.
+
+#### 12.7.1 Coord v2 reconciliation and reciprocal-compute integration
+
+For a Coord v2 exchange, AFP's signed `X_<32-byte SHA-256>` `session_context` remains the context in `afp:session:v1` and `afp:envelope:v1`. The canonical ZKA `bundle.metadata.context` and `CoordReceipt.context` instead encode that **same digest** as a BN254 scalar: take the 32-byte payload of the `X_` digest, interpret it as an unsigned big-endian integer, reduce it modulo the BN254 scalar-field modulus `r` of §15.4, and serialize the result as lowercase `0x` followed by exactly 64 hexadecimal digits. [AFP-0351] The result MUST be nonzero. [AFP-0352] A malformed `X_` value, invalid field encoding, or zero reduction is rejected; an implementation MUST NOT truncate, substitute, or fall back to another context. [AFP-0353] Because reduction is many-to-one, the verifier MUST independently authenticate and recompute the exact signed outer `X_...` context **and** compare its field reading to both ZKA locations; equality of field readings alone is insufficient. This is a reading of the already-signed digest, not a new AFP wire record, field, or identifier.
+
+The complete receipt shape is the pinned **ZKA v0.9.2-draft Coord v2 canonical schema** at publication commit `6e484dd07c2ae907f17d33fceeb12eff98ce3cb7`: 27 JSON members representing exactly 33 flattened public field elements. AFP neither restates nor extends that ABI. The schema file `schemas/public-inputs/zka_coord_v2_recursive.json` is pinned by SHA-256 `f8e58f59d17406baab44923ed539108167e616d7ce3d87bdc9fd22a87a28e9a1`; the carrying `schemas/compliance-bundle-v1.schema.json` is pinned by SHA-256 `fbe249ee089d9d22111ac2f3c7536ee859185ff4693608b44bd101102b78e49e`. A different shape, legacy five-field receipt, unknown member, noncanonical field, or opaque `coord` string is not Coord v2 completion evidence.
+
+The published §5.2 vector fixes the AFP→Coord seam:
+
+```text
+session_context       = X_eddb6ad038bd9a1a79c6c1d29ebd7461da0383948b7e6c13dadd6553b97e4a7f
+coord_context_field   = 0x2c4a3104b3f719739885aaf898b812ed3933e272a498a9cecb558f03f97e4a7b
+```
+
+Coord v2 acceptance is verifier-owned policy, but that policy is cryptographically bound without a new AFP wire format. `CoordAcceptancePolicyV1` is the canonical JSON object whose `kind` is `afp:coord-acceptance-policy:v1` and `receiptKind` is `zka:coord:receipt:v2`; it contains `afpProfile`, the text and field `profileId`, `workflowDefinitionHash`, `workflowInstanceId`, `completionStepId`, `verifierPolicyRoot`, `acceptedProfileBindings`, `acceptedArtifacts`, the two evidence-presence booleans, and expected initial-state, output, and post-state commitments. Each profile binding contains the exact `profileVersion`, `profileManifestHash`, `profileVkHash`, and `assuranceClass`. Each artifact binding contains the exact `role`, `circuitId`, `artifactEntryHash`, `schemaHash`, `target`, and `verificationKeyHash`. Both nonempty arrays are ordered by the RFC 8785 canonical bytes of each member and contain no duplicate. All keys are serialized exactly as named here, absent members are forbidden, and the session value is:
+
+```text
+profile_policy_hash = "D_" || lowercase_hex(SHA-256(RFC8785_JCS_UTF8(CoordAcceptancePolicyV1)))
+```
+
+[AFP-0354] The acceptor MUST compare that value to the live mutually signed session before calling a verifier. The verifier and durable completion store are deployment-owned capabilities bound when the receiving AFP instance is configured; neither the envelope sender nor an individual receive call may select or replace them. The acceptor supplies the exact policy, authenticated sender and recipient AIDs, session parties, both context encodings, verification time, and authorized evidence references to that configured ZKA verifier. The same verifier first authenticates the **complete canonical** `zka:bundle:v1` — including every proof and all bundle metadata — and then verifies the Coord final proof, recomputing the workflow and policy roots and authenticating the profile manifest/VK, recursive artifact policy entry/schema/VK, output, state, and evidence. A prover-supplied policy, caller-supplied verifier, caller-supplied replay store, or successful pairing alone is insufficient.
+
+The only supported mappings are:
+
+| AFP claim | ZKA profile ID | `profileId` field | receipt assurance | profile application circuit | DA / external commitments |
+|---|---|---|---|---|---|
+| PRP reconciliation completion | `zka:coord:private-reconciliation:v1` | `0x147446fe0f34833135f89bc9d7aa756cb778f8e8fbd77e570996ff1a8df752e1` | `zkNative` | `zka_coord_reconciliation` | DA nonzero; external zero |
+| VXP reciprocal-compute leg | `zka:coord:vxp-reciprocal-compute:v1` | `0x1aba8f8267027cdbd3e5ac25dc6767ffaf379e08541452dd1ea6b7a6f9710607` | `zkNative` | `zka_coord_reciprocal_compute` | DA nonzero; external zero |
+| VXP reciprocal acknowledgement | `zka:coord:vxp-reciprocal-ack:v1` | `0x23087cc4ad08d9dbc80318a7e7eb8df9618112319bca1c10f93fcd37073ebc6d` | `attested` | `zka_coord_reciprocal_ack` | DA zero; external nonzero |
+
+Every supported mapping is version `1` and is pinned to the following immutable `profileManifestHash` / `profileVkHash` pair, in table order: PRP `0x00502511877b0c7502792ccc35e841e36d067ba98925728253bc66ccb1082768` / `0x0bd66b2eb5d199726ef90f307069782beae1afe6d9a7488ec2c1e251d7b78f63`; VXP compute `0x21b14f3d82f54bfef2ae81ca254081bf0e94dd6ae7c0d7ca7a42684ef3d5a61c` / `0x2073432bf50f20e8cd5127a9734419ff866ce08e0d2b6a7b8a09e6491e425319`; and VXP acknowledgement `0x2b622e9a71c5e351bfef8d54e970084c483f7f1c158fe893296cdbaa117f2f1d` / `0x1bce6effb5f61fce0f27a7257ff301b67538699e675d0c6617da014d6cbf29dd`. The three immutable upstream profile-manifest **file** digests are, in the same order, `95b657020189c074976fcd49e0502d52d12445907caae7c6199292163c309560`, `11a25ff351add2b60172bb7d331eef862c97458185dbfd5834951ef04c394733`, and `de85a9ad42e5b33de771569884b55030f14b88a9a413ff56a1ea24864242f15a`; those SHA-256 file pins are not substitutes for the BN254 manifest fields. The carried final proof's artifact is the policy-pinned role-2 `zka_coordination_v2_recursive` artifact with verification-key field hash `0x2e72267c8a0c8750a5cfe2e2893ec689ae9b4a488938ac084aeff1b470d055a2`, not one of the application circuits in the table. Its artifact-entry hash, schema hash, and target remain explicit verifier-policy selections. The conformance fixture selects ZKA's live-fixture policy-entry convention and therefore pins `artifactEntryHash` `0x1520451d4710b91c59f982d7c148ba89c52d7e10c842bbb30a3a25b083784fae` and schema hash `0x18a3537ebe76dccbc7ca7a3f80eab71cdb3602df63bc6ad27bc4a7b5b9937c4a`; deployments using a different canonical source/toolchain policy entry commit and sign its exact resulting policy coordinates instead.
+
+The reciprocal acknowledgement is narrow: it proves only verification of the profile's signed assertion, not reciprocal computation, settlement, delivery, or an objective outcome. Its immutable canonical manifest pins the conformance-pilot producer and consumer identity keys. [AFP-0355] A pilot with different identities MUST publish a distinct versioned profile manifest and artifact and MUST NOT reuse `zka:coord:vxp-reciprocal-ack:v1`; the reference mapping above accepts only the pinned profile. Each VXP compute leg is independently complete. An acknowledgement gates only its successor leg, and a terminal acknowledgement remains separate evidence.
+
+A completion envelope uses the already-registered `result` message class. PRP reconciliation and the VXP reciprocal-compute leg travel from the session initiator to the responder; the reciprocal acknowledgement travels from the responder to the initiator. Any other class or direction is terminal. On this acceptance path the envelope and sender objects have exactly their registered members, every member is present, duplicate JSON names and non-JSON numeric constants are rejected, and `generated_at` / `expires_at` are finite JSON numbers; an ignored extension or value normalized away during decoding cannot become an exact retransmission. The selected ZKA bundle profile is the minimal pure work-attestation form: its exact top-level members are `compliance`, `coord_proof`, and `metadata`, and `compliance` is exactly `{ "proofs": [] }`. A transaction, binding, compliance proof, compliance aggregation, unknown member, or explicit `null` placeholder is rejected on this path; none may be used as a side channel for private workflow material. This selects a strict canonical subset of `zka:bundle:v1` and does not define another bundle format. [AFP-0356] The bundle's `metadata.generatedAt` and `metadata.expiresAt` MUST be offset-bearing RFC 3339 timestamps, expiry MUST NOT precede generation, and expiry MUST be strictly later than the receiver's verification time. These are the pinned ZKA ordering and freshness semantics; AFP adds no future-time or clock-skew rule, and the complete metadata remains input to the configured verifier. A PRP/VXP `coord_proof` submitted through the generic envelope-receive path is rejected: completion is available only through the policy-, verifier-, direction-, and replay-enforcing path.
+
+[AFP-0357] Before a PRP or VXP state machine records completion, applies a result, settles a leg, or emits a commitment, it MUST independently verify the complete bundle, final proof, and canonical receipt, revalidate that the authenticated session is still active, and then atomically and durably write `workflowInstanceId -> (sessionRef, receiptCommitment, completionFingerprint, canonicalEnvelopeBytes)`. The final session revalidation and durable write are serialized against same-instance lifecycle transitions; an abort or expiry observed while verification was in progress records no completion. That one record is both the replay authority and the authoritative completion effect; any in-memory view of completions is only an idempotent projection of it. This ordering closes the crash gap between replay reservation and effect recording: after session authentication, structural/freshness validation, and policy binding, a byte-identical retransmission can reconstruct the projection from the durable record without recontacting a verifier that is now unavailable and without applying a second effect. An unseen completion still requires both configured verifier calls. `completionFingerprint` hashes the exact signed outer/derived contexts, ordered parties, authenticated direction, committed policy, full 33-element receipt, selected artifact, and authorized evidence references. An exact byte retransmission is idempotent. A changed envelope, receipt, artifact, evidence reference, policy, direction, party pair, or cross-session use of a reserved workflow instance is terminal replay. [AFP-0358] The durable record MUST survive a restart of the receiving instance; storage that can lose records on restart, such as process memory or a temporary database, MUST NOT hold it. A workflow instance's completion is therefore applied at most once, including across a restart.
+
+Private reconciliation records and reciprocal data chunks remain encrypted participant-held material. AFP carries only the canonical ZKA proof and public commitments. An authorized evidence reference is verifier-local, opaque, and bound by its kind and aggregate commitment; it contains no caller-set availability flag. Before either configured verifier method may retrieve evidence, the consumer requires **exactly one** reference for each nonzero data-availability or external-fact commitment in the receipt and no other reference. Missing, duplicate, same-commitment/different-kind, or unrelated extra references are terminal; the verifier cannot be used as a confused deputy to fetch an unnecessary private dataset. [AFP-0359] The configured verifier MUST retrieve and authenticate each exact admitted reference. Data-availability commitments prove integrity, **not operational availability**. Only the configured verifier's typed temporary-unavailability signal maps to `COORD_V2_DATA_UNAVAILABLE`, the only retryable result, and it writes no durable completion record. A generic verifier exception, altered reference, or successfully retrieved but commitment-mismatched reference is terminal. No witness, private payload, retrieved bytes, profile bundle, proof bytes, opaque reference, or backend exception text may appear in an error.
+
+A configured verifier preserves a canonical terminal ZKA diagnosis only by raising the typed `CoordVerifierRejected` signal with one exact allowlisted terminal `COORD_V2_*` code: version, identifier, predecessor count, inactive slot, assurance, profile policy, artifact, application proof, scope, or incomplete workflow. The consumer returns that enum value without exception text. Replay, malformed input, verifier failure, AFP identity/session binding, and temporary unavailability remain consumer-owned outcomes and are forbidden in that signal; an unsupported, mutated, textual, or otherwise untyped verifier rejection collapses to `COORD_V2_VERIFIER_FAILURE`. This makes codes such as `COORD_V2_PREDECESSOR_COUNT` and `COORD_V2_INCOMPLETE_WORKFLOW` reachable without trusting a backend-controlled string.
+
+The reference returns the stable ZKA codes `COORD_V2_VERSION`, `COORD_V2_IDENTIFIER`, `COORD_V2_PREDECESSOR_COUNT`, `COORD_V2_INACTIVE_SLOT`, `COORD_V2_ASSURANCE`, `COORD_V2_PROFILE_POLICY`, `COORD_V2_ARTIFACT`, `COORD_V2_APPLICATION_PROOF`, `COORD_V2_SCOPE`, `COORD_V2_INCOMPLETE_WORKFLOW`, `COORD_V2_DATA_UNAVAILABLE`, `COORD_V2_REPLAY`, `COORD_V2_MALFORMED`, and `COORD_V2_VERIFIER_FAILURE`, plus the AFP boundary codes `AFP_COORD_IDENTITY` and `AFP_COORD_SESSION_CONTEXT`. The conformance fixture groups them into the stable cross-organization classes `unknown_profile`, `session_or_context`, `identity`, `workflow_or_policy`, `manifest_vk_or_artifact`, `assurance`, `evidence_alteration`, `replay`, and `proof_failure`. All but data unavailability are terminal and record no completion. [AFP-0360] A reference code and retryable flag are the entire public diagnostic; implementations MUST redact internal exception text and private material.
+
+`docs/afp_coord_v2_cross_org_conformance_v1.json` is the normative machine-readable cross-organization pilot fixture. It pins mutually authenticated parties, the context KAT and source artifacts, verifier-owned policy coordinates, private-data custody and opaque evidence-reference behavior, the three accepted claims, terminal mutation/replay cases, retryable unavailability, independent verification, and redaction assertions. [AFP-0361] A conforming pilot MUST reproduce every case without importing a witness or private payload into AFP. The standard-library reference tests use a deterministic verifier double to test this AFP consumer boundary; that double is deliberately **not** evidence of cryptographic verification. A real pilot satisfies `independent_final_proof_verification` only through its deployment-bound ZKA adapter verifying the complete bundle and final proof against the pinned coordinates before the durable completion write.
+
+> **ZKA bundle requirements.** ZKA v0.9.2-draft §5.4 defines an optional `coord_proof` member in `zka:bundle:v1` and permits pure work-attestation bundles where `coord_proof` is present and `transaction` is absent. The bundle's `metadata.context` is the shared replay/context binding and always equals the canonical nonzero BN254 projection of the AFP envelope's authenticated `X_` `session_context`; transaction, binding, and Coord context checks retain that projected field value. Only contained ZKC proofs in the current AFP mode use the separately authenticated v2 presentation context above. For `pay`, §15.4 defines the additional quote-bound interaction context supplied to the ZKA payment proof or request; the pool and proof enforce its binding, and any recomputing party checks the §15.4 fold. A profile carries an AFP envelope over `zka:bundle:v1`, and ZKA verifies the transaction, compliance, binding, and coordination proofs that are present.
+
+#### 12.7.2 Native credential-only carriage
+
+`afp:credential-envelope:v1` is the single AFP-native carrier for a credential-only exchange inside an authenticated encrypted bilateral session. It carries a native ZKC presentation and the exact Authenticated Proof Request it answers. It is session framing, not a new proof format or a ZKA bundle. ZKC owns the native presentation, APR signatures, predicate statements, profile handles, revocation, and Disclosure Receipt. AFP owns the signed outer record and the §5.9 identity/session/purpose/policy comparisons. [AFP-0362] A profile MUST reuse this carrier rather than invent a compliance-only bundle or another credential wrapper.
+
+```typescript
+interface AfpCredentialEnvelope {
+  kind: 'afp:credential-envelope:v1';
+  session_ref: string;
+  session_context: string;             // exact canonical nonzero-projecting X_ digest
+  profile: string;                     // the live AFP session profile
+  message_class: string;               // authenticated transport class for that profile
+  generated_at: number;                // positive whole-second Unix integer
+  expires_at: number;                  // positive whole-second Unix integer
+  presentation: object;               // unchanged native zkc:proof:v1 or zkc:proof:v2
+  apr: object;                        // unchanged signed ZKC Authenticated Proof Request
+  sender: AfpPartyRef;                 // current KEL-anchored sender and signature
+}
+```
+
+The machine-readable outer shape is `schemas/afp-credential-envelope-v1.schema.json` in the AFP source distribution. Every outer member is required; `null`, unknown members, duplicate JSON names, non-JSON numbers, and an absent sender signature are rejected. The native presentation and APR remain complete JSON objects: AFP does not strip, normalize, rename, merge, or reinterpret their members. It checks the presentation's `version` is `zkc:proof:v1` or `zkc:proof:v2`; the ZKC verifier enforces that version's exact native schema, profile/handle exclusivity, atomic proof statements, request parameters, authenticated issuer/revocation state, metadata validity and explicit linkable consent. Schema validity alone is never proof verification.
+
+The signature content is the RFC 8785/JCS UTF-8 encoding of the complete record with only `sender.signature` omitted. The sender's remaining `AfpPartyRef` fields are included exactly. Its content hash is `D_` followed by the 32-byte SHA-256 digest in lowercase hexadecimal, signed and verified under the existing KEL-current entity signing convention (§12.3). This new preimage does not change `afp:envelope:v1` bytes or signatures. The outer `session_context` retains the exact §5.2 digest; ZKC receives the purpose-bound §5.9 v2 presentation scalar, never the ZKA bundle-context projection as a substitute.
+
+[AFP-0363] Before native proof verification, the receiver MUST authenticate and open the session's sealed channel with this message class as associated data, require an owned OPEN or ACTIVE session, and verify the exact session reference, context, registered AFP profile, transport class, counterparty tenant/entity AIDs and current KEL signature. Both timestamps are positive whole-second integers; `generated_at <= now < expires_at`, generation precedes expiry, and expiry is within the session lifetime. A plaintext record, caller assertion that a channel is encrypted, stale signer, terminal session, wrong profile/session/class, future or expired record, or malformed native version is rejected before proof acceptance.
+
+[AFP-0364] The deployment's ZKC adapter MUST verify the exact signed native presentation and APR, derive their authenticated public statement, and bind its structured result to this envelope's content hash. [AFP-0365] It MUST authenticate the APR under the receiver's current KEL-anchored key and prove the credential-subject AID, §5.9 context, active profile and atomic predicate meanings; it MUST NOT manufacture them from holder-controlled labels. AFP then recomputes §5.9 from its own authenticated expected flow, principals, session and policy, and compares the verified subject/context/predicates to its required-predicate policy. `True`, absent verification, a result for a different envelope, or successful transport verification alone is insufficient. The adapter's failure or exception rejects the credential exchange.
+
+The stdlib reference KERI implementation uses Ed25519 keys, while the frozen ZKC scoped verifier-identity derivation requires a SEC1-compressed APR signer key. [AFP-0366] Implementations MUST NOT pad, hash, reinterpret or convert an Ed25519 key into that identity. Scoped receive therefore requires a deployment-owned, typed APR signer binding resolver which independently authenticates the SEC1 key as anchored to the receiver AID's current KEL event. Its result must name that exact AID and current event, and the ZKC adapter must verify the exact APR under the resolved key. A missing, malformed, stale or substituted binding is rejection. The reference provides this explicit seam, not a production key-binding scheme; a synthetic binding fixture does not qualify one.
+
+[AFP-0367] Acceptance MUST snapshot the signed record and verified facts, reject callback mutation, and revalidate live session/key/channel state after callback execution. A successful receive records exactly one accepted-credential effect before it returns; only then may an OPEN session become ACTIVE. Concurrent acceptance of the same signed content hash, including delivery in a freshly sealed frame, succeeds at most once. [AFP-0368] Failed verification releases its pending replay reservation and MUST NOT activate the session, record accepted credentials, create an agreement, or produce value effects. Transport replay protection may still consume the rejected sealed frame. [AFP-0369] Any later use of an accepted credential MUST confirm that this receiver accepted that exact, unchanged record and that its session is still live; a fabricated or changed record, or a session that is no longer live, is rejected. The receiver's record of an accepted credential is not a proof, wire artifact, durable attestation, or settlement authority.
+
+For open federation and introduction, mutually authenticated session/channel establishment may precede credential acceptance solely to carry the request and answer. That provisional transport does not authorize ordinary work, an agreement or value movement. The applicable trust-flow and introduction policy must accept the verified credential evidence before those effects occur. The reference remains a transport/binding implementation with an injected cryptographic verifier; it supplies no production issuer-authenticated subject-AID circuit, ZKC prover, or adapter (§5.9).
+
+**Compatibility.** The frozen `afp:credential-presentation:v1` record is not this carrier (§12.9). A peer lacking the native carrier must decline unsupported credential-only exchange; it must not synthesize a payment, Coord proof, placeholder binding, or empty ZKA bundle to obtain acceptance. Substantive `afp:envelope:v1` exchanges keep their verification and wire bytes. The native carrier registers no RFIP profile or settlement capability.
+
+**Conformance.** [AFP-0370] A conforming implementation MUST demonstrate credential-only exchange and introduction policy evaluation without constructing a ZKA bundle or calling a ZKA bundle verifier. [AFP-0371] It MUST reject unsigned/plaintext, wrong-session/profile/party/key/class/purpose/APR, missing or wrong predicates, expired/future, malformed/unknown-version, callback-error/mutation, and replay cases without credentialing state advancement. [AFP-0372] It MUST preserve profile and consent rules and prove that a compliance-only ZKA bundle still fails `EMPTY_BUNDLE`. [AFP-0373] Fixtures using synthetic subject statements or cryptographic callbacks MUST disclose that limitation and MUST NOT be called production ZKC interoperability.
+
+### 12.8 Freedom Safeguards at the session layer
+
+The six Freedom Safeguards are defined normatively in **ZKA v0.9.2-draft §1.6** and inherited by AFP at the protocol level (§9). [AFP-0374] This subsection maps them onto the **bilateral session**; **every profile inherits them by building on the core** and MUST NOT define a competing safeguards mapping.
+
+| # | Safeguard (ZKA §1.6) | Application to an AFP bilateral session — inherited by every profile |
+|---|---|---|
+| [AFP-0375] 1 | **Predicate Pluralism** | A session privileges no issuer or predicate set. Compliance requirements are the bilateral choice recorded in the federation agreement (§5.5); the core defines no canonical or default predicate set **and no canonical or default root authority (§6.3.1)**, and a profile MUST NOT introduce one. A default entry an implementation ships in its verification policy is product configuration, not a core or profile default; it is visible, editable, and removable by the deployment operating it (the duty is normative in §6.3.1), and it applies to an interaction only when signed into that interaction's policy (§9, §14.4). |
+| 2 | **Minimal Disclosure** | Every in-session proof is atomic — one predicate per proof (§5.4). A core CommitmentAtom commits to an `outcome_root`, not cleartext (§12.6.1). The session reveals only what the exchange requires; profiles enforce this structurally (PRP's Merkle-subtree pruning, VXP's value commitments) but inherit the default from the core. |
+| 3 | **No Revocability** | No operator, arbiter, or platform can force, freeze, reverse, or invalidate a session outcome. A CommitmentAtom requires both parties' KEL-anchored signatures (§12.6.1); dispute is bilateral-only with at most a pre-agreed arbiter that still needs both signatures (§12.5); timeout/expiry is observe-and-resolve, never intervention (§12.2.3). This is the session-layer statement of the §3 operator-blindness invariant. |
+| [AFP-0376] 4 | **Open-Source Predicates** | Any predicate a session carries MUST be open-source, versioned, and published with a public review period, exactly as ZKC §1.4 / ZKA §1.6 require. A profile adds no opaque predicate. |
+| [AFP-0377] 5 | **Agent Exit Rights** | Either party MAY exit a session, and the relationship, at any time (§12.2.2 → `ABORTED`); exit is unconditional and carries no protocol penalty. Leaving a federation, leaving a managed transport for an appliance (§4.7), and changing operator are all unconditional. A compliance-proof rejection blocks the *interaction* (the session declines), never *exit*. A profile's recourse for abandoning a *confirmed* commitment is only the bilaterally-agreed terms in the agreement, never an operator-enforced lock. |
+| [AFP-0378] 6 | **Verifier Accountability** | A proof or attestation request MUST be authenticated under the requesting party's stable KERI identity and the holder MUST retain a portable receipt of what was requested, for which declared purpose, and by whom (§5.8). Anonymous or unreceipted demands are rejected. A profile MUST preserve this accountability for every proof it requests. |
+
+A profile inherits this table by running over the core. [AFP-0379] A profile MAY note *how* it realizes a safeguard structurally (as PRP's Localize algorithm realizes Safeguard 2), but it MUST NOT weaken any safeguard, and it does not re-establish them — they hold because the session does.
+
+
+### 12.9 Frozen v1 compatibility forms
+
+This specification keeps the three v1 forms below frozen until the next protocol-family interface epoch. A frozen form keeps its exact wire bytes and semantics. [AFP-0380] An implementation MUST NOT translate a frozen form into its successor, treat it as an alias for its successor, or interpret it under later semantics. Each form is defined where the table shows; its compatibility rules are stated only here. Removing a frozen form changes the interface surface, so it moves the interface version and requires a protocol-family epoch.
+
+| Frozen form | Defined in | Successor |
+|---|---|---|
+| `afp.telemetry.instance_attestation.v1` | §6.3 catalog row | `afp.telemetry.instance_attestation.v2` (§6.3, §6.3.1) |
+| `afp:zkc-presentation-context:v1` | §5.9 | `afp:zkc-presentation-context:v2` (§5.9) |
+| `afp:credential-presentation:v1` | `afp.introduction` atom list (§13.3, §14.2) | `afp:credential-envelope:v1` (§12.7.2) |
+
+**`afp.telemetry.instance_attestation.v1`.** `afp.telemetry.instance_attestation.v1` is frozen. Its complete public inputs, circuit, private witness, cadence, failure signals, and semantics are its §6.3 catalog row. [AFP-0381] Implementations MUST NOT interpret its `publisher AID` as a generic authority field, an organizational root AID, or the delegated product-scoped publisher AID of the v2 construction, and MUST NOT attach v2 semantics to a v1 proof. [AFP-0382] The freeze is semantic as well as textual: wire decoding alone cannot detect a prohibited v2 interpretation of a v1 proof, so conforming verifiers MUST apply only the v1 publisher-issued semantics. v1 remains usable operator-facing; counterparty-facing policy in §14 uses v2.
+
+**`afp:zkc-presentation-context:v1`.** The v1 record identifies and audits presentation contexts created under AFP 0.3.10-draft. [AFP-0383] It MUST NOT be accepted by a current AFP 0.3.14-draft flow; §5.9 rejects v1 values.
+
+**`afp:credential-presentation:v1`.** The record stays identifiable under its own version. [AFP-0384] Any ZKA bundle it contains MUST satisfy ZKA's substantive-bundle rule. [AFP-0385] It is not an alias for `afp:credential-envelope:v1`: it MUST NOT be converted into that carrier, accepted as credential-only evidence, or used to satisfy a native credential-only request.
+
+---
+
+## 13. Profiles
+
+### 13.1 What an AFP profile is
+
+An **AFP profile** is a *named behavior over the Bilateral Session Core (§12)*. Both endpoints are AFP tenants (§1.2), so PRP and VXP are profiles rather than peer protocols. They are standardized behaviors layered on AFP, not independent wire standards with separate session, identity, or governance machinery.
+
+A profile:
+
+- **has** its own **atom kinds** and its own **exchange state machine** (PRP: SessionAtom/ComparisonAtom/…/CommitmentAtom over Compare→Localize→Evidence→Resolve→Commit; VXP: IntentAtom/…/SettlementAtom over Intent→Negotiation→Commitment→Fulfillment→Settlement);
+- [AFP-0386] **reuses, and MUST NOT re-specify**, the core's:
+  - bilateral session establishment, lifecycle, and timeout (§12.2),
+  - identity binding (§12.3),
+  - NATS namespace, under `afp.{tenant}.{profile}.*` (§12.4),
+  - bilateral dispute / optional-arbiter model (§12.5),
+  - commitment + optional-anchor primitive (§12.6),
+  - session-envelope bundle wire format (§12.7),
+  - Freedom-Safeguards application (§12.8);
+- runs inside a bilateral session whose `profile` field (§12.2.1) names it, between two entities whose federation agreement (§5.5) carries the profile's policy block.
+
+The test for *profile vs. protocol* is direct: if both endpoints are AFP tenants (§1.5.1) and the behavior is a named way of using a bilateral session, it is a profile. A tenant remains an AFP tenant whether it uses the reference implementation or another conforming implementation and whether it attests under an accepted authority or under none. A behavior whose counterparties are not AFP tenants belongs in a standalone standard, not an AFP profile.
+
+### 13.2 Profile registration and extension
+
+Profiles are registered **lightly**; AFP deliberately avoids a heavyweight registry that would create marketplace machinery (§1.2). A profile is defined by a small, declarative **profile descriptor**:
+
+```typescript
+interface AfpProfileDescriptor {
+  name: string;                 // the {profile} namespace label (§12.4); unique; lowercase; e.g. 'prp'
+  version: string;              // profile spec version, e.g. '0.2'
+  spec_ref: string;             // URI / citation of the profile specification
+  atom_kinds: string[];         // the profile's atom-kind discriminators, e.g. ['prp:session:v2', …]
+  policy_schema_ref: string;    // the policy block this profile adds to the federation agreement (§5.5)
+  status: 'reference' | 'experimental' | 'deprecated';
+}
+```
+
+*Note on the citations below.* The versioned AFP citations in the published `pay`, `pay_venue`, and `afp.introduction` descriptors identify the retained publication of those profile definitions. They do not track the current core interface version: `pay` and `pay_venue` retain `AFP 0.3.12-draft`, and `afp.introduction` retains `AFP 0.3.14-draft`. Other profiles cite their own specifications through `spec_ref`.
+
+Registration rules:
+
+1. [AFP-0387] A profile `name` occupies exactly one `{profile}` label in the §12.4 tree and MUST be unique across registered profiles.
+2. The registry is the **set of descriptors published with the AFP specification** plus any a federation agrees bilaterally to recognize. There is **no global, queryable, marketplace-style profile directory** (§8.8's reasoning applies: such a directory would itself leak the coordination graph). Two tenants recognize a profile by naming it in their federation agreement; the descriptor is how they agree on its atom kinds and policy schema.
+3. [AFP-0388] A profile MUST register its atom-kind discriminators so they do not collide with another profile's or with the core's `afp:*:v1` kinds.
+4. **Extension** is by versioning the profile (a new descriptor `version`), not by mutating the core. [AFP-0389] A profile MUST NOT add to or alter the core's §12 machinery; if a behavior needs a core change, that is an AFP-spec change, not a profile change. This keeps the core stable and the dependency acyclic: profiles depend on the core; the core depends on no profile.
+5. A profile descriptor's `status` is `reference` (specified with AFP, the recommended set), `experimental` (recognized bilaterally, not yet a reference profile), or `deprecated`.
+
+### 13.3 Published profiles
+
+AFP publishes three reference behaviors and three experimental profiles: `afp.introduction` (§14), which remains experimental until its lower layers are operational (§14.9); `pay` v1.0 (§15), which remains experimental pending independent production-audit evidence for its Base settlement dependencies; and `pay_venue` v2.0 (§15.9), which is published for exact bilateral negotiation but does not qualify or activate a settlement deployment.
+
+| Profile (`name`) | Behavior | Atom kinds | Spec | Status |
+|---|---|---|---|---|
+| **`work`** (base) | AFP's own tenant↔tenant **work exchange** — §5: a bilateral cross-tenant work request and a ZKA-carried result / attestation. The base behavior of the core, not a separate document. | `afp:session:v1`, `afp:commitment:v1` + the §5.3 message classes | This spec, §5 + §12 | reference |
+| **`prp`** | **Pairwise Reconciliation Protocol** — bilateral state reconciliation: Compare → Localize → Evidence → Resolve → Commit (+ optional Anchor). A Coord v2 completion claim is only `zka:coord:private-reconciliation:v1` under the §12.7.1 policy and verification rules. | `prp:session:v2`, `prp:comparison:v2`, `prp:divergence:v2`, `prp:evidence:v2`, `prp:resolution:v2`, `prp:commitment:v2`, `prp:anchor:v2` | PRP v0.2 | reference |
+| **`vxp`** | **Value eXchange Protocol** — bilateral value exchange: Intent → Negotiation → Commitment → Fulfillment → Settlement, across reciprocal / compute / data / capability / money domains. Coord v2 recognizes only the reciprocal-compute and narrowly-scoped reciprocal-ack claims of §12.7.1. | `vxp:*` discriminators over `IntentAtom`, `NegotiationAtom`, `CommitmentAtom`, `FulfillmentAtom`, `SettlementAtom`, `DisputeAtom`, `ChannelAtom`, `SubscriptionAtom` | VXP v0.2 | reference |
+| **`afp.introduction`** | **Introduction Tier** — stranger onboarding: a credential + ZKC-proof handshake that auto-negotiates a scoped, collateral-priced provisional §5.5 agreement, with reputation-driven limit growth, graduation, and safeguard-compatible downgrade/termination. | `afp:introduction-offer:v1`, `afp:introduction-request:v1`, `afp:credential-presentation:v1` (frozen v1 form; §12.9), `afp:provisional-agreement:v1`, `afp:limit-adjustment:v1`, `afp:downgrade:v1`, `afp:termination:v1` | `docs/afp_introduction_profile.md`, §14 | experimental |
+| **`pay`** | **USD-obligation/WETH-settlement** — a bilaterally authenticated USD commercial obligation and exact WETH-wei quote bound to a Base ZKA-native pool, with finality-aware receipt evidence. | `afp:payment-quote:v1`, `afp:payment-receipt:v1` | This spec, §15 | experimental |
+| **`pay_venue`** | **Venue-neutral private settlement** — a bilaterally authenticated USD obligation and exact asset-atomic quote bound to an immutable venue deployment, recipient, manifest, policy, and holder-disclosed receipt occurrence. | `afp:payment-quote:v2`, `afp:payment-receipt:v2` | This spec, §15.9 | experimental |
+
+Current credential-only introduction handshakes reuse the core `afp:credential-envelope:v1` (§12.7.2). [AFP-0390] Profiles MUST NOT register that core kind as a profile-owned discriminator. The listed `afp:credential-presentation:v1` is a frozen v1 form (§12.9).
+
+PRP and VXP define their own behavior-specific machinery — PRP's `O(D·log N)` Merkle localization, named scope filters, and star or mesh multi-party composition; VXP's value-domain taxonomy, exchange channels, subscriptions, and per-domain breach conditions. They reference §12 for the shared session, identity, namespace, dispute, arbiter, commitment, anchor, bundle, and safeguard machinery.
+
+> **Multi-party note.** PRP composes N-party reconciliation from bilateral sessions in a star (a coordinating center runs one session per site) or a small mesh. This is a *profile* composition of core bilateral sessions, not a core N-way construct — the core is bilateral by definition (§12.1), and any multi-party behavior is a profile arranging bilateral sessions. The optional pre-agreed arbiter of §12.5 (e.g. a trial coordinating center) and PRP's star hub are frequently the same entity, but the roles are distinct: arbiter (tie-break authority granted in the agreement) vs. hub (the party that holds the converged snapshot).
+
+### 13.4 Profile conformance
+
+A conforming AFP profile:
+
+- runs every interaction inside a bilateral session (§12.1) whose `profile` field names it;
+- carries the core session, identity, commitment, and envelope fields (§12.2–§12.7) on its atoms, adding only profile-specific fields;
+- addresses its subjects under `afp.{tenant}.{profile}.*` (§12.4) and nowhere else;
+- resolves disputes under the §12.5 model (bilateral-only primary; at most a pre-agreed arbiter; no operator mediation; no forced outcome);
+- inherits the §12.8 Freedom-Safeguards application and weakens no safeguard;
+- when it relies on Coord v2 as completion evidence, binds its verifier-owned acceptance policy through the signed session `profile_policy_hash`, performs the §12.7.1 independent final-proof verification and durable replay reservation before effects, and carries no witness or profile-private evidence bundle;
+- registers a profile descriptor (§13.2) whose atom kinds do not collide.
+
+A "profile" that defines its own session establishment, identity binding, standalone namespace, dispute model, or bundle wire format is **not** a conforming AFP profile; it duplicates the core.
+
+---
+
+<!-- afp-set:include docs/afp_introduction_profile.md -->
+## 14. Introduction Tier
+
+§14, the `afp.introduction` profile, is specified in `docs/afp_introduction_profile.md`. Its sections keep their numbers (§14.1–§14.9). It applies when an implementation claims the profile (§1.5).
+<!-- afp-set:end -->
+
+
+## 15. USD Obligation / WETH Settlement Profile (`pay`)
+
+This section is **normative** and defines the AFP `pay` v1.0 profile: two principals agree on a commercial obligation denominated in USD minor units and an exact settlement amount denominated in WETH wei, then bind that bilateral quote to a private ZKA/Pay transfer. The profile composes `afp:session:v1`, `afp:envelope:v1`, `zka:bundle:v1`, and AFP-KDC v1.0.3 without defining a new session, envelope, bundle, or key-derivation surface. AFP-KDC v1.0.3 retains the v1.0.2 Poseidon2 parameter and conformance profile.
+
+### 15.1 Ownership boundaries and registration
+
+AFP owns the principal-readable USD obligation; the exact WETH-wei quote; its source, time, expiry, slippage bound, nonce, and bilateral authentication; its binding to a live AFP session and a specific immutable ZKA pool; and the observational settlement receipt. ZKA owns notes, nullifiers, roots, proofs, conservation, pool state, `pool_context`, the payment proof's `interaction_context`, unconditional spend/withdrawal semantics, and each pool's asset-risk profile. APL owns selection of the configured `:zka_direct` route, construction and submission of the ZKA SDK request, finality observation, and route evidence returned to AFP.
+
+AFP does not verify a ZKA proof, query an exchange-rate oracle, decide whether a price is fair, custody value, define a multi-asset pool, or reproduce ZKA calldata or circuit schemas. ZKA does not interpret USD, choose a pricing source, or enforce quote fairness. APL does not alter a signed quote.
+
+The published descriptor is:
+
+```typescript
+{
+  name: 'pay',
+  version: '1.0',
+  spec_ref: 'AFP 0.3.12-draft §15',
+  atom_kinds: [
+    'afp:payment-quote:v1',
+    'afp:payment-receipt:v1',
+  ],
+  policy_schema_ref: 'afp:payment-policy:v1',
+  status: 'experimental'
+}
+```
+
+`experimental` reflects the absence of the independent-audit evidence required to claim the launch settlement dependencies as production-ready. It does not weaken this wire contract or any conformance requirement below.
+
+The federation agreement names the profile through this policy block:
+
+```typescript
+interface AfpPaymentPolicyV1 {
+  kind: 'afp:payment-policy:v1';
+  deployment: {
+    chain_id: 8453;
+    asset: '0x4200000000000000000000000000000000000006';
+    pool: string;
+    pool_context: string;
+    asset_risk_profile: 'zka:asset-risk:s3-hard:v1';
+  };
+  accepted_rate_sources: string[];
+  max_quote_lifetime_seconds: number;
+  max_slippage_bps: number;
+  required_finality: 'safe' | 'finalized';
+}
+```
+
+[AFP-0391] `accepted_rate_sources` MUST be non-empty and contain unique, non-empty names. [AFP-0392] `max_quote_lifetime_seconds` MUST be a positive integer; `max_slippage_bps` MUST be an integer in `0..10000`. The deployment fields use the canonical encodings of §15.2 and identify one immutable pool. [AFP-0393] An accepted quote's deployment and rate source MUST match this policy exactly, its lifetime MUST NOT exceed the policy maximum, and its slippage bound MUST NOT exceed the policy maximum. [AFP-0394] Receipt finality MUST reach `required_finality` before the application represents the interaction as settled. [AFP-0395] The accepted capability retains the live session's `profile_policy_hash` (§15.5), and receipt tracking MUST use only the policy whose hash equals it. [AFP-0396] The Bilateral Session Core's `profile_policy_hash` MUST equal `qb64("D", SHA-256(RFC8785_JCS_UTF8(AfpPaymentPolicyV1)))`, and a `pay` quote MUST be accepted only inside a live session whose `profile` is exactly `pay` and whose policy hash matches the policy used for validation.
+
+### 15.2 Canonical payment quote
+
+```typescript
+interface AfpPaymentQuoteV1 {
+  kind: 'afp:payment-quote:v1';
+  quote_id: string;
+  session_ref: string;
+  session_context: string;
+
+  obligation: {
+    currency: 'USD';
+    amount_minor: string;
+  };
+
+  settlement: {
+    chain_id: 8453;
+    asset: '0x4200000000000000000000000000000000000006';
+    pool: string;
+    amount_wei: string;
+    pool_context: string;
+    asset_risk_profile: 'zka:asset-risk:s3-hard:v1';
+  };
+
+  rate: {
+    source: string;
+    usd_minor: string;                  // settlement-rate numerator
+    weth_wei: string;                   // settlement-rate denominator
+    reference_usd_minor: string;        // signed source-rate numerator
+    reference_weth_wei: string;         // signed source-rate denominator
+  };
+
+  quoted_at: string;
+  expires_at: string;
+  max_slippage_bps: number;
+  quote_nonce: string;
+
+  initiator_signature?: AfpCommitSignature;
+  responder_signature?: AfpCommitSignature;
+}
+```
+
+[AFP-0397] `obligation.amount_minor`, `settlement.amount_wei`, and all four rate integers MUST be positive canonical unsigned base-10 integer strings: digits only, with no sign, whitespace, decimal point, exponent, or leading zero. USD is represented in ISO 4217 minor units (cents for USD) and WETH in wei. [AFP-0398] A wire implementation MUST NOT use a binary floating-point value for any monetary or rate component. [AFP-0399] The Base launch profile additionally requires `settlement.amount_wei <= 2^120 - 1`, matching ZKA's frozen `MAX_NOTE_VALUE_WEI`; quote construction and validation MUST reject a larger amount before signing or routing it.
+
+The rate is the exact positive rational `usd_minor / weth_wei`. [AFP-0400] Quote construction and validation MUST use arbitrary-precision integer arithmetic without overflow or truncation and the deterministic ceiling rule:
+
+```text
+settlement.amount_wei = ceil(
+  obligation.amount_minor * rate.weth_wei / rate.usd_minor
+)
+```
+
+[AFP-0401] Equivalently, implementations MAY compute `(amount_minor * weth_wei + usd_minor - 1) // usd_minor`; any different result MUST be rejected, and a result above the frozen ZKA note-value bound MUST be rejected. [AFP-0402] `max_slippage_bps` MUST be an integer in `0..10000`. The reference rational is `reference_usd_minor / reference_weth_wei`; the settlement rational is `usd_minor / weth_wei`. [AFP-0403] Validation MUST also enforce, with arbitrary-precision integer arithmetic:
+
+```text
+abs(usd_minor * reference_weth_wei
+    - reference_usd_minor * weth_wei) * 10000
+  <= max_slippage_bps * weth_wei * reference_usd_minor
+```
+
+This is the absolute settlement-price deviation divided by the signed reference price. It constrains pre-signing quote construction, never permits execution above the signed `settlement.amount_wei`, and no post-signing repricing is allowed. AFP fixes no global rate source; `rate.source` names the bilateral source or policy whose signed reference observation the parties accepted.
+
+[AFP-0404] Every address in canonical quote content MUST be normalized before hashing to lowercase `0x` followed by exactly 40 hexadecimal digits. [AFP-0405] Mixed-case, checksum-case, short, overlong, or otherwise non-canonical encodings MUST be rejected, not silently normalized during verification. The Base launch profile fixes `chain_id` to `8453` and `settlement.asset` to the lowercase Base WETH9 address shown above. [AFP-0406] `settlement.pool`, `settlement.pool_context`, and `settlement.asset_risk_profile` MUST exactly match the configured immutable deployment. [AFP-0407] `pool_context` MUST use the ZKA SDK's canonical nonzero BN254 field encoding: lowercase `0x` followed by exactly 64 hexadecimal digits whose big-endian integer is in `1..r-1`, for the modulus `r` in §15.4. [AFP-0408] `session_context` MUST be the base-defined `X_` 32-byte digest (§5.2); any other form is out of profile and MUST be rejected.
+
+[AFP-0409] `quoted_at` and `expires_at` MUST have exactly the whole-second UTC form `YYYY-MM-DDTHH:MM:SSZ`; fractional seconds and numeric UTC offsets are invalid. [AFP-0410] Both timestamps MUST represent valid instants, and `expires_at` MUST be strictly later than `quoted_at`. The quote is expired when the verifier's current time is greater than or equal to `expires_at`. Expiry bounds acceptance (§15.3), route dispatch (§15.5), and the on-chain inclusion that can settle the quote (§15.6).
+
+[AFP-0411] `quote_nonce` MUST be lowercase `0x` followed by exactly 64 hexadecimal digits (32 bytes). [AFP-0412] A signing party MUST NOT sign two different quote contents with the same nonce. `quote_id` is a caller-supplied, non-empty stable identifier. [AFP-0413] An acceptor MUST atomically and durably reserve the exact `(quote_id, quote_hash, quote_nonce, acceptance_record_hash)` acceptance tuple when accepting a quote. This durable acceptance ledger is the authority consumed by route and receipt tracking code. [AFP-0414] A repeated accepted quote is a duplicate and MUST NOT execute again; the same ID with different canonical content or the same nonce with a different quote is a terminal validation failure. [AFP-0415] A rejected quote MUST NOT consume either replay key. [AFP-0416] A restart or process crash MUST NOT make an accepted replay key available again.
+
+### 15.3 Quote hash and bilateral authentication
+
+`quote_content` is the quote object with `initiator_signature` and `responder_signature` absent (not `null`). AFP serializes `quote_content`, `full_quote` (below), and the payment policy objects (§15.1, §15.9) as RFC 8785 JSON Canonicalization Scheme (JCS) UTF-8 bytes, `RFC8785_JCS_UTF8`, as §12.2.1 does for the stable session content. JCS fixes every byte. Non-ASCII text is raw UTF-8; `"` and `\` use their short escapes; control characters use the RFC 8785 escapes; `<`, `>`, and `/` are not escaped; and numbers use the RFC 8785 number form. Hashes use SHA-256 and AFP's `D` qb64 digest convention:
+
+```text
+quote_hash = qb64("D", SHA-256(RFC8785_JCS_UTF8(quote_content)))
+```
+
+[AFP-0417] Both principals MUST sign this exact `quote_hash` using the `AfpCommitSignature` shape of §12.6.1. Both signatures are required. [AFP-0418] Each signature MUST be genuine under the signer's KEL-current Ed25519 key identified by `kel_event_dig`; a stale, unknown, malformed, or mismatched key state MUST be rejected. [AFP-0419] `AfpCommitSignature.signed_at` is untrusted observational metadata: it is not covered by the Ed25519 payload, MUST NOT be used for freshness or authority, and changing it neither invalidates nor strengthens quote authentication. Freshness derives only from the signed `quoted_at` and `expires_at` fields compared with the verifier's current time. [AFP-0420] The initiator and responder AIDs MUST be the two principals of the live session, and `session_ref` and `session_context` MUST exactly match that session. [AFP-0421] The session context MUST recompute from the signed §12.2.1 session fields, and both session `AfpPartyRef` signatures MUST verify against KEL-current delegated identity and the §4.5 witness policies before quote acceptance. An operator, arbiter, application administrator, or one party alone cannot substitute for either signature.
+
+Signatures authenticate the exact settlement amount and all quote controls, including the rate source, pool, pool context, risk profile, timestamps, slippage bound, ID, and nonce. Any mutation after either signature was made invalidates authentication.
+
+[AFP-0422] After both signatures verify, the acceptor MUST compute `acceptance_record_hash = qb64("D", SHA-256(RFC8785_JCS_UTF8(full_quote)))`, where `full_quote` includes both complete signature objects. Each `signed_at` is a JSON number in the RFC 8785 number form, so an integral value has no fractional part. This is distinct from the content-only `quote_hash`. The exact signed-record hash is stored in the durable acceptance tuple, retained by `AcceptedPaymentQuote`, and recomputed from its sealed canonical wire on every use. Removing, replacing, or changing either signature therefore cannot reuse a content-only acceptance reservation.
+
+**Canonicalization vector.** For the §15.4 end-to-end quote content with `quote_id` replaced by the JCS string `"quote-é€-\"\\-\u0007-</script>"` (U+00E9, U+20AC, a quotation mark, a reverse solidus, U+0007, and `</script>`), the JCS bytes carry that member exactly as `"quote_id":"quote-é€-\"\\-\u0007-</script>"`, and:
+
+```text
+quote_hash          = D_0871468ad31824902243872ef1ac34123dc295a1cd6f314b0ade204346304398
+interaction_context = 0x1071b098cf8e9c1e8319b6e505d4ee76323e653fc063286ec03a9b4d4e529c72
+```
+
+An encoder that escapes non-ASCII characters as `\uXXXX`, or escapes `<` for HTML, produces a different `quote_hash` and is non-conforming. [AFP-0423] Implementations MUST reproduce this vector exactly.
+
+### 15.4 Interaction-context derivation
+
+[AFP-0424] The ZKA payment for an accepted quote MUST bind the canonical nonzero BN254 field value derived below. The derivation is the **ZKA/Pay Interaction-Context Binding Profile v1** fold — restated here normatively and in full, so this specification stays auditable standalone, and **pinned** to its frozen upstream definition: ZKA `docs/sdd/sdd_pay_interaction_binding.md` §2 at immutable revision `db39afd`, KAT fixture SHA-256 `e0d7fd0442b3cfd14c21c949ae13bcf9fba4250b2067300f729aaad2d38a2a8d`. On any divergence the pinned v1 governs. A future upstream v2 does **not** bind AFP; adopting one requires an explicit AFP interface revision and compatibility plan.
+
+ZKA's `active_fixed_byte` operational-domain registry contains this tag as `pay-interaction-context`, and AFP vendors that registry at `protocol-family/poseidon2-operational-domains-v1.json` under the canonical family manifest. The manifest binds both registry copies and both copies of the frozen interaction-context KAT.
+
+Both fold inputs are 32-byte digests mapped into the scalar field by plain big-endian reduction:
+
+```text
+r = 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001
+
+afp_quote_hash_field  = big_endian_uint256(quote_digest)   mod r
+session_context_field = big_endian_uint256(session_digest) mod r
+```
+
+Here `r` is the BN254 scalar-field modulus. `quote_digest` is the 32 SHA-256 digest bytes the §15.3 `quote_hash` encodes — its qb64 payload: the digest itself, never its string encoding. [AFP-0425] The quote-hash input MUST be the canonical `D_` digest of §15.3. `session_digest` is the 32-byte payload of the §5.2 `X_` session context. [AFP-0426] A session context that is not exactly that base-defined digest is out of profile and MUST be rejected fail-closed, never mapped by a fallback. This mapping is a *reading* of the same §5.2/§12.3 session context into field form, not a parallel context; §12.7 uses the identical projection for ZKA's bundle, transaction, binding, and Coord session-context slots while the AFP envelope retains the original `X_` digest. [AFP-0427] The quote-digest wire stays **unreduced**: the value carried to ZKA or an APL adapter is the raw 32 bytes, and any party recomputing the fold MUST apply the reduction above first — roughly four of five uniformly distributed digests exceed `r`, so skipping it is the common-case error. Truncation is non-conforming. [AFP-0428] A reduction yielding zero MUST be rejected fail-closed (probability 6/2²⁵⁶ ≈ 2⁻²⁵³; never substituted). [AFP-0429] Both inputs exist before either quote signature, so the producer MUST perform the full derivation at quote-construction time, before signature exchange and nonce reservation — a zero reduction there costs only a reissue with a fresh `quote_nonce`; at dispatch it is a terminal §15.5 fail-closed condition.
+
+The derivation is the field-count-prefixed Poseidon2 fold over the §A.3 instance's two-field hash `P(a, b)`:
+
+```text
+INTERACTION_CONTEXT_TAG =
+  0x00007a6b612f7061792f696e746572616374696f6e2d636f6e746578742f7631
+  // the UTF-8 bytes "zka/pay/interaction-context/v1",
+  // right-aligned in a 32-byte word — a fixed byte tag (§A.4 carve-out)
+
+state = P(INTERACTION_CONTEXT_TAG, Field(2))
+state = P(state, afp_quote_hash_field)
+state = P(state, session_context_field)
+interaction_context = "0x" || lowercase_hex_64(state)
+```
+
+`Field(2)` is the field element two — the count of folded input fields, absorbed as an ordinary second sponge input to the first call, not an arity annotation. The input order is normative — quote hash first; order sensitivity is proven by the upstream `asymmetry-pair` vector. [AFP-0430] A zero fold output MUST be rejected fail-closed, matching the ZKA circuit's `interaction_context != 0` assertion. The tag is a raw **fixed byte tag** consumed directly as a field element under the §A.4 carve-out for ZKA pool-adjacent fold tags; it is not a §A.3 `deriveFieldTag` domain, and it is currently registered in no family registry — its defining authorities are the pinned SDD §2 and the ZKA SDK's `INTERACTION_CONTEXT_TAG_HEX` constant. [AFP-0431] Until the coordinated family registry includes it, implementations MUST source that exact pinned value and collision-check it against the active fixed-byte registry before publication.
+
+[AFP-0432] The application or APL adapter MUST provide the 32-byte lowercase hex field value, not a digest or a qb64 encoding, as the ZKA payment request/proof's `interaction_context`; the pool and proof MUST enforce the corresponding binding. The envelope retains the original `session_context`. [AFP-0433] Implementations MUST NOT replace, concatenate, reinterpret, or overload that session field, and MUST NOT use a raw quote hash or raw session context in place of the derived field.
+
+**Conformance vectors.** [AFP-0434] An implementation MUST reproduce, byte-identically, all five vectors of the pinned upstream KAT fixture — `small-ints`, `one-one`, `max-canonical`, `keccak-derived-quote`, `asymmetry-pair` (published verbatim as the normative artifact `docs/pay_interaction_context_kat_v1.json`) — **and** the AFP-native end-to-end vector below, which pins the qb64→field seam the upstream vectors cannot exercise. Both of its digests exceed `r`, so the reduction leg is vector-pinned rather than prose-pinned. For the §15.2 canonical quote content
+
+```json
+{"expires_at":"2026-07-11T12:05:00Z","kind":"afp:payment-quote:v1","max_slippage_bps":100,"obligation":{"amount_minor":"2500","currency":"USD"},"quote_id":"quote-2026-08-16-0002","quote_nonce":"0xabababababababababababababababababababababababababababababababab","quoted_at":"2026-07-11T12:00:00Z","rate":{"reference_usd_minor":"250000","reference_weth_wei":"1000000000000000000","source":"bilateral:base-weth-usd:v1","usd_minor":"250000","weth_wei":"1000000000000000000"},"session_context":"X_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","session_ref":"session-0001","settlement":{"amount_wei":"10000000000000000","asset":"0x4200000000000000000000000000000000000006","asset_risk_profile":"zka:asset-risk:s3-hard:v1","chain_id":8453,"pool":"0x1234567890abcdef1234567890abcdef12345678","pool_context":"0x0101010101010101010101010101010101010101010101010101010101010101"}}
+```
+
+the derived values are:
+
+```text
+quote_hash            = D_f5637ad946fbcc4ca76a7bb137a1796c1eb60c24590d773231d36f4759e8462d
+afp_quote_hash_field  = 0x036df29ae103ab7c0dd91f20b01abf9a55b282b9f86e445bde69a363a9e84628
+session_context_field = 0x2d5db5236a286e480dadd814e8e98d7a4e1f4dcd08092ca9df67189f2eeeeeea
+interaction_context   = 0x26232f5bff7eb274b601df155b7b47abf504fc5778bdc2b35b961d14e5140d6d
+```
+
+[AFP-0435] Implementations MUST reproduce this vector exactly.
+
+### 15.5 Acceptance and route execution
+
+[AFP-0436] Before dispatching a route, an implementation MUST fail closed unless all of the following hold:
+
+1. the quote has the exact kind and canonical field encodings of §15.2;
+2. the amount satisfies the deterministic ceiling-rate calculation;
+3. the quote's session is live at this instance and reached that state only through the normal propose/accept-or-confirm/activate lifecycle (§12.2) at this instance; the session record, identifiers, both `AfpPartyRef` signatures, and both quote signatures all verify KEL-current;
+4. the quote is unexpired and not before `quoted_at` at dispatch time, read from the deployment's trusted clock, and its ID and nonce pass atomic replay checks;
+5. chain, WETH asset, immutable pool address, `pool_context`, and `zka:asset-risk:s3-hard:v1` match configured Base launch policy; and
+6. the derived `interaction_context` is supplied unchanged to the ZKA request, and no §15.4 field reduction of either fold input yielded zero — a terminal fail-closed condition at dispatch, reachable only if the mandatory quote-construction-time derivation (§15.4) was skipped.
+
+Item 3 is evaluated against the instance's own current session state, its normal-activation provenance, and its own clock each time it is relied on. Closing, aborting, expiring, or replacing the session ends it. [AFP-0437] After a restart, item 3 holds only for a session whose durable state and lifecycle provenance the instance has re-established; a stored or transferred token MUST NOT stand in for that state.
+
+[AFP-0438] Unknown or unsupported chain, asset, pool, context, risk profile, signature, or finality state MUST be rejected. [AFP-0439] APL MUST submit exactly the signed `settlement.amount_wei`; it MUST NOT reprice, substitute an asset or pool, or route through a mutable/multi-asset settlement contract. [AFP-0440] APL MUST submit each AFP payment in its own Base transaction. [AFP-0441] ZKA/Pay's `submitBatch` accepts up to `MAX_PAYMENTS` payment records (ZKA `docs/sdd/sdd_pay_pool.md` §3.3, §4.1), but the transaction that carries an AFP payment MUST carry exactly that one payment record, so a `transaction_id` names exactly one AFP payment. A failed proof or submission leaves the interaction unsettled.
+
+Successful acceptance produces the **accepted capability**: the acceptor's immutable, non-wire record of one accepted quote, created only after all checks above succeed. [AFP-0442] The acceptor MUST canonically reconstruct the detached quote and recompute and verify `quote_hash`; it MUST NOT use a quote hash supplied by the caller or the counterparty. The accepted capability retains the quote ID, nonce, `quote_hash`, interaction context, the live session's `profile_policy_hash`, and the canonical quote wire. The retained policy hash is not a wire field, so it changes no v1 quote byte. [AFP-0443] For a v2 quote, the signed `policy_hash` MUST equal the retained `profile_policy_hash`. [AFP-0444] Receipt and route processing MUST fail closed unless the durable acceptance ledger contains the exact `(quote_id, quote_hash, quote_nonce, acceptance_record_hash)` tuple of the accepted capability; an absent, false, or failed ledger check is rejection. [AFP-0445] The tracker MUST recheck this reservation at initialization. [AFP-0446] It MUST also reject a policy whose `policy_hash` differs from the retained `profile_policy_hash`, so a caller cannot substitute a weaker policy, such as `safe` for `finalized`, after acceptance. The ledger reservation, not the accepted capability, is the authorization source: a copy for the same canonical wire and exact durable tuple is equivalent, and an accepted capability without a reservation is not accepted authority. [AFP-0447] Route dispatch, which creates route evidence and claims its transaction, MUST re-evaluate item 3 at the time of dispatch. [AFP-0448] The session's `id`, `session_context`, and `profile` MUST match the quote's `session_ref`, `session_context`, and profile, and its `profile_policy_hash` MUST equal the retained hash. [AFP-0449] Dispatch MUST fail closed when the deployment's trusted clock is at or after `expires_at` or before `quoted_at`, or after the session is closed, aborted, expired, or replaced. [AFP-0450] A dispatch that fails any check MUST NOT consume the route claim. The accepted capability alone is therefore not dispatch authority after the quote window or the session ends.
+
+**Dispatch admission.** The dispatch checks above test the quote window and the session at the instant of dispatch. Admission is the payer's planning before that instant. An otherwise successful transaction included at or after `expires_at` can move value while it leaves the obligation unsettled (§15.6); a reverted or failed transfer need not move value. That is by design: the strict inclusion bound protects the payee, and AFP provides no forced refund or clawback (§15.7). [AFP-0505] Before the payer begins an execution attempt for an accepted quote, ahead of proving, and again before it broadcasts the transaction, it SHOULD estimate from deployment measurements, at a service target the deployment chooses, when each remaining path will complete, and SHOULD NOT proceed when a path's projected completion plus its uncertainty reaches that path's deadline. The paths are: the payer's dispatch, and any peer acceptance still needed, before both the quote's and the session's `expires_at`; inclusion on chain strictly before the quote's `expires_at`; and delivery of the route evidence to the payee inside the live session, early enough for the payee to claim the transaction before the quote's `expires_at`, as the observation-claim paragraph below recommends. Paths can overlap. The uncertainty includes the deployment's clock uncertainty and the granularity and offset of the including block's timestamp, and an unavailable estimate counts as not fitting. Admission is local planning: it authorizes nothing, reserves no transaction and extends no deadline. The checks at dispatch and the atomic transaction claim still apply, and closing, aborting or replacing the session ends the window earlier.
+
+When a path does not fit, the payer can requote, decline or defer. A requote is a fresh quote signed by both principals, with a fresh `quote_id` and `quote_nonce`, in a fresh session if the current one ends too soon. A refusal at admission does not cancel the accepted quote, release its replay reservation or cancel a transaction already broadcast. [AFP-0506] Before it submits a replacement payment for the same obligation, the payer SHOULD defer that payment while an earlier attempt may still execute or its economic outcome is unresolved, because two signed quotes and two transactions could otherwise pay one obligation twice. If an earlier transfer moved value, the payer accounts for it before it decides whether a further payment is due. A fresh quote can be negotiated in the meantime. This gives neither principal a power to cancel or refund (§15.7). The admission estimates and the service target are deployment policy. This specification sets no minimum quote lifetime: no finite lifetime guarantees inclusion when transport and inclusion delays are unbounded, and a longer lifetime widens the window in which the signed WETH amount can move against the USD obligation. The legs between `quoted_at` and dispatch depend on the exchange. In a warm exchange a payer that signs second can dispatch after one leg, while the countersigned quote is still on its way to the payee, and a payer that signs first waits for it, two legs. These are examples, not prescribed message counts. Session establishment can finish before `quoted_at`. The §8.4 transport budget gives ideal figures for one and two legs.
+
+The acceptance ledger, the finality-evidence verifier, and the trusted clock that route evidence creation, the observation claim, route decoding, and tracker creation use are fixed by the deployment's configuration. [AFP-0451] Request data and received records MUST NOT select, replace, or supply any of them, including a substitute ledger, a verifier, or a time value. Route and receipt processing needs only exact-tuple verification and the atomic route claim from the ledger; it never reserves a quote.
+
+[AFP-0452] After the dispatch checks above succeed and before returning route evidence, the dispatching party MUST atomically claim one `transaction_id` against the exact accepted four-field tuple. [AFP-0453] The first claim wins, the same transaction is idempotent, and every different transaction for that quote MUST fail. [AFP-0454] The ledger MUST also refuse a `transaction_id` that a different accepted quote has already claimed, so one transaction settles at most one quote. This applies to `pay_venue` v2 as to `pay` v1: one Aztec transaction settles at most one v2 quote. [AFP-0455] A durable ledger enforces this with a uniqueness constraint over claimed transactions, and it MUST fail closed at initialization when existing records violate that constraint. [AFP-0456] Route decoding and tracker initialization MUST verify the exact claimed transaction. They do not require the live session and remain available after it ends, so that a party can observe finality after the quote window; the §15.6 inclusion bound still applies. Each party claims the transaction in its own acceptance ledger, through dispatch or through the observation claim. [AFP-0457] A party MAY claim a transaction outside the dispatch window, including at or after `expires_at` or after the session ends, only through the observation claim. The observation claim needs neither the live session nor the trusted clock. [AFP-0458] Before it claims, the party MUST verify the accepted capability against the ledger as above, MUST require a policy whose `policy_hash` equals the retained `profile_policy_hash` and that the quote validates against, and MUST rebuild the expected route evidence from the accepted capability and the receipt's `transaction_id` without claiming. [AFP-0459] Every route field of the receipt MUST match that route evidence. [AFP-0460] The receipt's `finality` MUST meet the policy's `required_finality`; `pending` evidence proves no inclusion. [AFP-0461] The deployment's finality-evidence verifier MUST return exactly true for the receipt, the route evidence, the policy, and the quote's `expires_at`, so the evidence establishes inclusion strictly before `expires_at` (§15.6). Only then does the party atomically claim the transaction, under the same first-claim, idempotence, and cross-quote uniqueness rules as dispatch. [AFP-0462] An observation that fails any check MUST NOT consume the route claim. This path gives the payer no new option. A transaction included at or after `expires_at` can never be claimed through it, and §15.6 never settles one, so the payer's settlement choice is fixed on chain before the window closes. Delivering or withholding the `transaction_id` after that changes only when a party records the chain fact, not the fact. The end of the session likewise does not stop an in-window inclusion from being claimed or settled. In `pay` v1 the observation claim is in practice a payee-side path, because only the payee's own evidence can meet §15.6 item 3. [AFP-0463] The payer's APL SHOULD still dispatch, and deliver route evidence to the payee inside the live session, early enough for the payee to claim the transaction before `expires_at`.
+
+**Restart.** An accepted quote executes at most once, including across a restart. [AFP-0464] A restart MUST NOT clear the durable replay reservation or the route claim. After a restart, the same quote is not accepted again, and a transaction already claimed for it stays bound and cannot be replaced. Normal acceptance after a restart requires a new quote. [AFP-0465] A recovery path MUST verify a durable accepted record and MUST NOT weaken replay protection. When no transaction is yet claimed for a recovered quote, the first claim is made only through dispatch or the observation claim, under their checks and the atomic first-claim and cross-quote uniqueness rules above.
+
+**Trust boundary.** These rules assume that the code holding the acceptance ledger and route authority is trusted. AFP defines no isolation against code that already runs with that authority. [AFP-0466] A deployment MUST NOT run tenant code, plugins, or other untrusted extensions with that authority. The AFP implementation-security guide (`docs/afp_implementation_security_guide.md`, non-normative) describes how the reference implementation meets this section and where its in-process protections end.
+
+### 15.6 Payment receipt and finality
+
+```typescript
+interface AfpPaymentReceiptV1 {
+  kind: 'afp:payment-receipt:v1';
+  quote_ref: string;
+  quote_hash: string;
+  interaction_context: string;
+  chain_id: number;
+  pool: string;
+  asset: string;
+  amount_wei: string;
+  transaction_id: string;
+  observed_at: string;
+  finality: 'pending' | 'safe' | 'finalized';
+  finality_evidence: object;
+}
+```
+
+A receipt is observational evidence, not settlement authority. [AFP-0467] `quote_ref` MUST equal the accepted quote's `quote_id`; its quote hash, interaction context, chain, pool, asset, and amount MUST exactly match the accepted quote and the immutable route evidence. [AFP-0468] `transaction_id` MUST be non-empty and MUST identify the submitted transaction. `observed_at` uses the exact whole-second UTC format of §15.2. [AFP-0469] `finality_evidence` MUST be a non-empty object appropriate to the deployment's documented finality policy; unknown or empty evidence is insufficient.
+
+[AFP-0470] Receipt tracking MUST be configured with a fail-closed, deployment-specific finality-evidence verifier. [AFP-0471] For every observation, that verifier MUST validate the evidence against the configured chain and immutable deployment, the exact submitted transaction, and the claimed `pending`, `safe`, or `finalized` level. Verifier absence, failure, an unknown evidence shape, or evidence for another transaction, deployment, or level leaves the interaction unsettled.
+
+The receipt's quote hash, interaction context, chain, pool, asset, and amount are echoed from the route evidence, so they match by construction; they are not observations of the chain. [AFP-0472] Evidence for `safe` or `finalized` MUST therefore establish all of the following from the chain and from the payee's own note:
+
+1. the transaction is a ZKA/Pay `submitBatch` to the configured pool that carries exactly one payment record (§15.5);
+2. that payment's public inputs (ZKA `docs/sdd/sdd_pay_pool.md` §3.2) carry exactly the receipt's `interaction_context` and the configured `pool_context`; and
+3. the payee opened the payment's output slot-0 note, which §3.2 defines as the recipient output, by holder disclosure as in §15.9, and the note's value equals `amount_wei`.
+
+The payee is the session principal to whom the obligation is owed. Slot-0 amount and recipient are private ZKA values, so no public field can replace the disclosure. The payee's own tracker opens the note with its own keys. In `pay` v1 only the payee's tracker can represent the interaction as settled. [AFP-0473] The other principal's tracker reports dispatch and inclusion only and MUST NOT represent the interaction as settled, because v1 defines no record that carries the payee's disclosure to it. A matching transaction identifier, a note the payee cannot open, or a disclosure made by the payer is insufficient. [AFP-0474] Retained evidence MUST be recursively immutable; serialization returns a detached JSON copy and cannot expose mutable nested aliases.
+
+[AFP-0475] The tracker and the §15.5 observation claim MUST give the verifier the accepted quote's `expires_at`. [AFP-0476] Evidence for `safe` or `finalized` MUST establish that the transaction was included on chain strictly before `expires_at`, by the timestamp of its including block under the configured chain's rules. `observed_at` is observation time and does not establish inclusion. Evidence that does not establish inclusion before `expires_at`, or that shows inclusion at or after it, is insufficient: a late transaction leaves the obligation unsettled. Settlement therefore follows the inclusion time on chain, not the time a party learns of the transaction: a party that learns of an in-window transaction late claims it through the §15.5 observation claim. This bound protects the payee, because a payer that dispatches late can otherwise choose a settlement time after the signed WETH amount has lost value against the USD obligation. The ZKA transfer itself is unaffected (§15.7).
+
+[AFP-0477] For one quote and transaction, receipt state MAY advance monotonically `pending` → `safe` → `finalized`. [AFP-0478] It MUST NOT regress, skip to an unknown state, change the transaction, or rewrite any quote/route binding. [AFP-0479] `pending` MUST NOT be represented as final settlement. [AFP-0480] A deployment MAY require `safe` or `finalized` for application completion; until that threshold is supported by matching evidence, the AFP interaction remains unsettled. [AFP-0481] Concurrent observations for one tracker MUST serialize the finality comparison and state update atomically; a lower or equal-rank observation cannot overwrite a higher state, regardless of verifier completion order.
+
+### 15.7 Asset-risk and safeguard requirements
+
+The flagship profile is WETH in one separately deployed immutable, single-asset ZKA pool declaring `zka:asset-risk:s3-hard:v1`. [AFP-0482] Settlement contracts MUST be single-asset and immutable. Every additional asset requires a separate pool address, `pool_context`, note/nullifier/root state, escrow, certification record, and explicit asset-risk profile. [AFP-0483] An application MUST NOT treat a shared or dynamically mutable asset registry as equivalent. A native stable unit is an independent future protocol and is not a dependency of AFP `pay`, ZKA/Pay, or the Base WETH launch.
+
+The profile inherits all six Freedom Safeguards (§12.8). In particular, expiry, dispute, rejection, replay failure, insufficient finality, late inclusion, or route failure affects only acceptance, dispatch, and settlement of this interaction. [AFP-0484] It MUST NOT freeze, revoke, redirect, delay, seize, or otherwise gate a holder's existing ZKA notes or unconditional withdrawal (Safeguards 3 and 5). [AFP-0485] AFP applications and APL adapters MUST NOT add an administrator recovery, override, clawback, or forced-reroute path. Any compliance proof requested alongside payment remains atomic and requester-authenticated with a holder-retained receipt (Safeguards 2 and 6).
+
+### 15.8 Conformance
+
+A conforming `pay` v1.0 implementation:
+
+- registers exactly the descriptor and atom kinds in §15.1;
+- accepts and emits only the canonical encodings and deterministic arithmetic of §15.2;
+- derives the exact §15.3 hashes and the §15.4 fold — reproducing, byte- identically, every vector of the published `docs/pay_interaction_context_kat_v1.json` artifact and the inline §15.4 end-to-end vector — and requires two KEL-current signatures bound to the live session;
+- atomically prevents quote-ID and nonce replay without consuming replay state for a rejected quote;
+- dispatches only the configured Base/WETH immutable single-asset pool under the hard-S3 risk profile and preserves the signed amount and context;
+- dispatches only inside the quote window and the live session, by the deployment's trusted clock, and counts as settled only a transaction included before `expires_at`;
+- claims a transaction outside dispatch only through the §15.5 observation claim, with verified evidence at the policy's required finality of inclusion strictly before `expires_at`, and without consuming the claim on rejection;
+- matches receipt evidence exactly and enforces monotonic finality;
+- settles only from chain-side `interaction_context`, `pool_context`, and single-payment checks plus the payee's slot-0 disclosure, lets only the payee's tracker represent the interaction as settled, and claims each transaction for at most one quote; and
+- makes every failure interaction-local while preserving unconditional ZKA spend, withdrawal, and exit.
+
+An implementation that obtains its own price, silently canonicalizes invalid wire content, reprices after signature, permits one-party authorization, treats `pending` as final, reuses a mutable/multi-asset settlement contract, or adds an administrative note/withdrawal gate is **not conforming**.
+
+### 15.9 Venue-neutral payment profile (`pay_venue`) v2.0
+
+AFP publishes `pay_venue` as a separate experimental profile. It generalizes the signed settlement target without changing, converting, aliasing, or deprecating `pay` v1.0. Every Base v1 policy, quote, receipt, canonical byte string, hash, interaction-context vector, and route rule in §15.1–§15.8 remains unchanged. [AFP-0486] A peer that supports only v1 rejects v2, a peer that supports only v2 rejects v1, and negotiation MUST select exactly one profile and version without fallback.
+
+The published descriptor is:
+
+```typescript
+{
+  name: 'pay_venue',
+  version: '2.0',
+  spec_ref: 'AFP 0.3.12-draft §15.9',
+  atom_kinds: [
+    'afp:payment-quote:v2',
+    'afp:payment-receipt:v2',
+  ],
+  policy_schema_ref: 'afp:payment-policy:v2',
+  status: 'experimental'
+}
+```
+
+Publication registers this descriptor for negotiation; it does not activate a route. A v2 quote is acceptable only in a live bilateral session whose `profile` is exactly `pay_venue` and whose `profile_policy_hash` equals the complete v2 policy hash. [AFP-0487] Parsing the schema, receiving a manifest hash, or finding the descriptor in an implementation registry MUST NOT select, qualify, or enable a deployment.
+
+The policy's trusted deployment is the exact closed record below:
+
+```typescript
+interface VenueDeployment {
+  venue_profile: 'zka:aztec:native-pay:v1';
+  network_id: string;                     // canonical lowercase aztec:<reference>
+  anchor_chain_id: string;                // canonical eip155:<positive-decimal>
+  asset_id: string;                       // <anchor_chain_id>/erc20:<lowercase-address>
+  asset_commitment: string;               // canonical nonzero BN254 scalar
+  contract_class_id: string;              // canonical nonzero BN254 scalar
+  contract_instance_id: string;           // canonical nonzero BN254 scalar
+  settlement_portal_id: string;           // nonzero lowercase 20-byte address
+  manifest_hash: string;                  // sha256:<64 lowercase hex>
+  fee_route: 'aztec-protocol-fee-v1';
+  receipt_profile: 'zka:aztec:pay-receipt:v1';
+  nullifier_semantics: 'aztec-app-siloed-v1';
+  max_note_value: '340282366920938463463374607431768211455';
+  asset_risk_profile: 'zka:asset-risk:s3-hard:v1';
+}
+
+interface AfpPaymentPolicyV2 {
+  kind: 'afp:payment-policy:v2';
+  deployment: VenueDeployment;
+  accepted_rate_sources: string[];
+  max_quote_lifetime_seconds: number;
+  max_slippage_bps: number;
+  required_finality: 'safe' | 'finalized';
+}
+```
+
+[AFP-0488] The deployment owner MUST obtain this tuple from trusted tenant-scoped configuration and independently verify the immutable manifest bytes, class and instance, constructor-fixed portal and asset, asset commitment, chain identities, receipt verifier, and asset-risk evidence. A quote-supplied `manifest_hash` is only an exact comparison value. It is never trusted configuration, an attestation, or evidence of production eligibility. Unknown venue identifiers and any missing, extra, noncanonical, stale, or mismatched field fail closed.
+
+`network_id` and `anchor_chain_id` use canonical restricted CAIP-2 spelling; `asset_id` uses the corresponding restricted CAIP-19 ERC-20 spelling. The three field identifiers use lowercase `0x` plus exactly 64 hexadecimal digits representing an integer in `1..r-1`, where `r` is the §15.4 BN254 modulus. The portal is lowercase `0x` plus exactly 40 hexadecimal digits and is nonzero. `max_note_value` is exactly `u128::MAX`. The hard-S3 declaration requires an immutable ownerless one-asset deployment and does not inherit evidence from Base or from another asset.
+
+The exact signed settlement, rate, and quote records are:
+
+```typescript
+interface VenueSettlement {
+  venue_profile: 'zka:aztec:native-pay:v1';
+  network_id: string;
+  anchor_chain_id: string;
+  asset_id: string;
+  contract_instance_id: string;
+  settlement_portal_id: string;
+  manifest_hash: string;
+  recipient_id: string;                   // canonical nonzero BN254 scalar
+  amount_atomic: string;                  // positive decimal, at most u128::MAX
+  asset_risk_profile: 'zka:asset-risk:s3-hard:v1';
+}
+
+interface AfpPaymentQuoteV2 {
+  kind: 'afp:payment-quote:v2';
+  quote_id: string;
+  session_ref: string;
+  session_context: string;
+  policy_hash: string;
+  obligation: { currency: 'USD'; amount_minor: string };
+  settlement: VenueSettlement;
+  rate: {
+    source: string;
+    usd_minor: string;
+    asset_atomic: string;
+    reference_usd_minor: string;
+    reference_asset_atomic: string;
+  };
+  quoted_at: string;
+  expires_at: string;
+  max_slippage_bps: number;
+  quote_nonce: string;
+  initiator_signature?: AfpCommitSignature;
+  responder_signature?: AfpCommitSignature;
+}
+```
+
+[AFP-0489] Every object is closed: an implementation MUST reject an unknown, missing, or differently encoded member rather than normalize it. All monetary and rate values are positive canonical unsigned decimal strings. `recipient_id` identifies the private venue recipient, not an L1 withdrawal beneficiary. The deterministic arithmetic is `amount_atomic = ceil(obligation.amount_minor * rate.asset_atomic / rate.usd_minor)` using arbitrary-precision integers, with the §15.2 cross-multiplied slippage rule applied to the asset-atomic denominators. Fees are not subtracted from or added to the signed amount. Every deployment, asset, recipient, amount, portal, manifest, or policy change requires a newly signed quote.
+
+`policy_hash` is `qb64("D", SHA-256(RFC8785_JCS_UTF8(AfpPaymentPolicyV2)))` over the complete policy, including every deployment and finality field. Quote hashing, two-party KEL-current signatures, the complete signed-record acceptance hash, durable quote-ID/nonce reservation, and the §15.4 interaction-context fold otherwise use the unchanged v1 algorithms. `quote_content` includes `policy_hash` and every settlement field and omits only the two signature members. [AFP-0490] Acceptance MUST reparse the exact v2 wire, require the matching live `pay_venue` session and policy hash, verify both principals, and reject policy substitution. [AFP-0491] Route execution requires the same sealed, store-reserved capability boundary as §15.5 and MUST submit the exact signed target and amount. Route dispatch also requires the §15.5 dispatch window. [AFP-0492] It MUST require the live `pay_venue` session capability on that call, matched to the quote's `session_ref`, `session_context`, and profile. [AFP-0493] It MUST fail closed when the deployment's trusted clock is at or after `expires_at` or before `quoted_at`, or after the session is closed, aborted, expired, or replaced, and a rejected dispatch MUST NOT consume the route claim. [AFP-0494] Outside the dispatch window a party MAY claim a v2 transaction only through the §15.5 observation claim, with verified evidence at the policy's required finality of inclusion strictly before `expires_at`. Through either path, one Aztec transaction settles at most one v2 quote (§15.5). The §15.5 dispatch admission recommendation is written for `pay` v1; a `pay_venue` deployment can apply the same check with its venue's own inclusion and finality estimates.
+
+The v2 route evidence contains exactly `quote_ref`, `quote_hash`, `interaction_context`, the complete nested `VenueSettlement`, and `transaction_id`. The observational receipt is:
+
+```typescript
+interface AfpPaymentReceiptV2 {
+  kind: 'afp:payment-receipt:v2';
+  quote_ref: string;
+  quote_hash: string;
+  interaction_context: string;
+  settlement: VenueSettlement;
+  transaction_id: string;
+  output_note_hash: string;                // canonical BN254 scalar; zero allowed
+  private_event_log_position: number;      // integer in 0..2^53-1
+  observed_at: string;
+  finality: 'pending' | 'safe' | 'finalized';
+  finality_evidence: object;
+}
+```
+
+[AFP-0495] The receipt MUST echo every settlement field exactly. [AFP-0496] A deployment-selected verifier MUST authenticate holder-authorized disclosure of the exact recipient output note, private event occurrence, contract instance, receipt-profile domain, interaction context, transaction, amount, asset, recipient, network, and claimed finality. A matching transaction identifier, public Base batch receipt, unconstrained log, arbitrary non-empty evidence object, or note hash alone is insufficient. [AFP-0497] The §15.6 inclusion bound applies: the verifier receives the quote's `expires_at`, `safe` or `finalized` evidence MUST establish inclusion strictly before it, and a late transaction leaves the obligation unsettled. Finality advances monotonically as in §15.6, and the first verified `(output_note_hash, private_event_log_position)` occurrence is immutable across advancement.
+
+The published `docs/payment_venue_v2_conformance.json` artifact pins the full canonical policy and quote bytes, policy and quote hashes, interaction context, and exact accepted target. The published `docs/payment_venue_v2_dispatch_conformance_v1.json` artifact pins dispatch cases inside and outside the quote window and the live session, and inclusion cases before, at, and after `expires_at`. Conformance requires those vectors, the unchanged Base vectors, cross-version rejection, exact policy/deployment/receipt matching, replay rejection, dispatch-window and inclusion-bound rejection, and occurrence preservation.
+
+The `experimental` status is load-bearing. Publication grants no V6 qualification, manifest approval, independent audit, holder backend, asset eligibility, APL route qualification, deployment, fund movement, or production activation. Each remains an independent fail-closed gate owned by its deployment and protocol boundary. [AFP-0498] Direct L1 withdrawal remains unconditional; a later bridge hop requires a separately accepted route and MUST NOT block or reverse withdrawal. [AFP-0499] A conforming implementation MUST keep `pay_venue` disabled until all deployment-specific gates are satisfied and MUST disclose it as published-but-not-activated when they are not.
+
+---
+
+<!-- afp-set:include docs/kdc_specification.md -->
+## Appendix A: Key Derivation Core (KDC)
+
+Appendix A, AFP-KDC v1.0.3, is specified in `docs/kdc_specification.md`. Its sections keep their numbers (§A.1–§A.7), so a citation of AFP Appendix A or of AFP-KDC §A.n resolves there.
+<!-- afp-set:end -->
+
+
+
+
+## License
+
+This specification is released under the Apache 2.0 License.
+
+---
+
+*AFP: Verifiable federation between tenants — with nothing to trust.*

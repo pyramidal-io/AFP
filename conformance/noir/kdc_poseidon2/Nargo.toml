@@ -1,0 +1,8 @@
+[package]
+name = "afp_kdc_poseidon2_conformance"
+type = "lib"
+authors = ["AFP Protocol"]
+description = "AFP-KDC v1.0.2 raw sponge and key-hierarchy KATs"
+
+[dependencies]
+poseidon = { path = "../vendor/poseidon" }

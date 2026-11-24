@@ -1,0 +1,2 @@
+[workspace]
+members = ["kdc_poseidon2"]

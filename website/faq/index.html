@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Frequently asked questions about the Agent Federation Protocol (AFP) - verifiable, metadata-private federation between tenants, operator blindness, and composition with ZKC, ZKA, and ZKM.">
+    <title>FAQ - Agent Federation Protocol</title>
+    <script>(function(){var t;try{t=localStorage.getItem('os-theme')}catch(e){}if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)})()</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=Public+Sans:ital,wght@0,400;0,600;1,400&amp;family=Source+Serif+4:opsz,wght@8..60,600&amp;display=swap">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" href="../favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="../favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="../favicon-16.png">
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+</head>
+<body class="os" data-protocol="afp">
+    <div class="os-family">
+        <div class="os-wrap">
+            <p class="os-family__title label">ZK protocol family</p>
+            <ul class="os-family__list">
+                <li><a class="os-family__link small" href="https://zka.dev" target="_blank" rel="noopener"><span class="os-mark os-mark--zka" aria-hidden="true"></span>ZKA</a></li>
+                <li><a class="os-family__link small" href="https://zkc.dev" target="_blank" rel="noopener"><span class="os-mark os-mark--zkc" aria-hidden="true"></span>ZKC</a></li>
+                <li><a class="os-family__link small" href="https://zkm.dev" target="_blank" rel="noopener"><span class="os-mark os-mark--zkm" aria-hidden="true"></span>ZKM</a></li>
+                <li><a class="os-family__link small" href="../" aria-current="page"><span class="os-mark os-mark--afp" aria-hidden="true"></span>AFP</a></li>
+                <li><button class="os-btn os-btn--small os-theme" type="button">Light / Dark</button></li>
+            </ul>
+        </div>
+    </div>
+
+    <header class="os-header">
+        <div class="os-wrap">
+            <a class="os-brand" href="../">
+                <span class="os-mark" aria-hidden="true"></span>
+                <span class="os-brand__name">AFP</span>
+                <span class="os-brand__long small">Agent Federation Protocol</span>
+            </a>
+            <nav class="os-nav" aria-label="Primary">
+                <a class="small" href="../spec/">Specification</a>
+                <a class="small" href="../schema/">Schemas</a>
+                <a class="small" aria-current="page" href="../faq/">FAQ</a>
+                <a class="small" href="../llms.txt">For AI Agents</a>
+                <a class="os-btn os-btn--small" href="https://github.com/pyramidal-io/AFP" target="_blank" rel="noopener">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="os-main">
+        <section class="os-pagehead">
+            <div class="os-wrap">
+                <a class="os-pagehead__back small" href="../">&larr; Back to AFP</a>
+                <h1 class="title">Frequently Asked Questions</h1>
+                <p class="lede">Common questions about AFP, tenant federation, operator blindness, and how the protocol composes with ZKC, ZKA, and ZKM.</p>
+            </div>
+        </section>
+
+        <section class="os-section">
+            <div class="os-wrap">
+                <div class="os-section__head">
+                    <h2 class="heading">What AFP Is</h2>
+                </div>
+                <div class="os-section__body">
+                    <div class="os-faq body">
+                        <div class="os-faq__item">
+                            <h3 class="subheading">What is AFP?</h3>
+                            <p>AFP is the protocol layer for verifiable, metadata-private federation between tenants. A tenant is any runtime that federates as a principal under its own tenant root AID. Every tenant must satisfy the AFP tenant conformance profile; a shortfall makes it a non-conforming tenant, not a non-principal. ADAMAS is the reference implementation, not the definition.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">Does AFP require both sides to run the same platform?</h3>
+                            <p>No. Conforming tenants may use different platforms, implementations, and product releases, provided both implement a mutually compatible, pinned AFP interface/profile/substrate tuple; unknown, unmatched, or ambiguous tuples fail closed. Neither side is required to run any particular vendor's platform. ADAMAS is the reference implementation, not a conformance condition.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">What are AFP's three relationships?</h3>
+                            <p>AFP defines exactly three relationships between identifiable, cryptographically verifiable principals: <strong>tenant &harr; tenant</strong>, where two tenants coordinate work across organizational lines with neither side revealing more than the work requires; <strong>tenant &harr; operator</strong>, where the operator of a transport verifies platform health through ZKC proofs rather than raw telemetry; and <strong>identity continuity</strong>, where a tenant's identity and accumulated relationships survive a change of deployment topology or operator.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">What is AFP explicitly not?</h3>
+                            <p>AFP is not an agent marketplace, public registry, capability-discovery feed, task broker, observation-contribution surface, reputation system, NKey identity scheme, or HTTP bridge. Those were v0.2 draft surfaces. In the originating ADAMAS deployment, the product scope narrowed to life-sciences work run by named domain entities that are themselves multi-agent systems on that platform, so there were no third-party agents to integrate and no marketplace to police. That history explains the smaller surface; it does not limit AFP's current multi-platform scope.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">Does AFP include a public agent directory?</h3>
+                            <p>No. Federation is bilateral and agreement-scoped. AFP defines no marketplace, public registry, or capability-discovery feed. The one opt-in exception is the experimental introduction tier's willingness-to-federate directory: a tenant may publish that it is open to being approached by strangers, but the record carries no work descriptor and no open call for work &mdash; it reveals which tenants are open, never which tenants have paired, and first contact is still routed through the metadata-private mixnet.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="os-section">
+            <div class="os-wrap">
+                <div class="os-section__head">
+                    <h2 class="heading">How AFP Works</h2>
+                </div>
+                <div class="os-section__body">
+                    <div class="os-faq body">
+                        <div class="os-faq__item">
+                            <h3 class="subheading">Who are AFP's principals, and how does AFP identify tenants?</h3>
+                            <p>AFP recognizes exactly three kinds of principal, all identified by AIDs with KERI semantics: a <strong>tenant</strong>, a runtime that federates as a principal under its own tenant root AID governed by a Key Event Log (KEL); an <strong>entity</strong>, a named domain multi-agent system within a tenant, identified by a delegated AID whose inception is anchored in the tenant's KEL; and an <strong>operator</strong>, whoever runs an AFP transport, whose role is operational only and confers no protocol-level privilege or data path into tenant state.</p>
+                            <p>Tenants and entities use AIDs with KERI semantics, KELs, and witnesses, in the AFP encoding of §4.4.2, which is not KERI/CESR wire-compatible. NKey-based identity is retired.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">What is the operator-blindness invariant?</h3>
+                            <p>Operator Blindness (OB) states that no operator of an AFP transport can learn, from operating that transport, the <strong>content</strong> of any tenant's work (OB-1) or the <strong>coordination graph</strong> of which tenant is coordinating with which (OB-2). OB-1 is delivered by end-to-end encryption of every AFP payload; OB-2 is delivered by the metadata-privacy routing layer. Both are required &mdash; encrypted payloads over an operator-observable relationship graph does not satisfy the invariant.</p>
+                            <p>OB is a statement about capability, not conduct: an implementation satisfies it only if the operator <em>cannot</em> obtain the protected information, not merely if it chooses not to look.</p>
+                            <p><strong>OB-2 limits (&sect;8.10):</strong> Federation membership remains visible. Mixing and cover traffic mitigate but do not eliminate long-horizon statistical disclosure, especially in small federations. A coalition of mix-node operators can directly trace every packet whose whole path it holds; if it can hold any valid path, then over sustained traffic it will almost certainly trace some packet of a pairing. Other inference and active attacks are not bounded, and the directory cannot prove that operators are independent. The graph-privacy claim is subject to these limits even when the mixnet is operational.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">How does AFP hide metadata?</h3>
+                            <p>Tenant-to-tenant coordination is routed through the AFP Federation Mixnet. Deployments without the mixnet must not claim OB-2 conformance.</p>
+                            <p>The mixnet is a Loopix-family design with mandatory cover traffic: a conforming tenant emits coordination-plane traffic into the routing layer at a constant, scheduled rate at all times while federated, whether or not it has real messages to send, with genuine work slotted into that stream. Mixing and cover traffic mitigate timing and volume correlation by relays and by passive observers of inter-relay links, as &sect;8.2 requires; an OB-2 claim states its assumptions and evidence.</p>
+                            <p><strong>Limits:</strong> Federation membership remains visible. Mixing and cover traffic mitigate but do not eliminate long-horizon statistical disclosure, especially in small federations. A coalition of mix-node operators can directly trace every packet whose whole path it holds; if it can hold any valid path, then over sustained traffic it will almost certainly trace some packet of a pairing. These are the <a href="/spec/#810-residual-limitations">&sect;8.10 residual limitations</a>, distinct from a deployment's failure to meet OB-2 prerequisites.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">How does tenant &harr; operator telemetry work?</h3>
+                            <p>An operator's only per-tenant knowledge is what a tenant proves via ZKC proofs, pushed by the tenant on its own schedule. AFP defines a starting telemetry predicate catalog &mdash; instance attestation, build currency, compute-quota compliance, and audit-log integrity &mdash; each an atomic, open-source, versioned predicate.</p>
+                            <p>Self-attested predicates (compute quota, audit-log integrity) must additionally carry a public-sample binding, so the operator can check a signed claim against a verifiable sample without ever observing per-tenant traffic. A failed or missing telemetry proof produces an alert only; AFP defines no gate that lets an operator intervene in tenant state.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">How do two tenants that don't already know each other establish trust to federate?</h3>
+                            <p>AFP recognizes three trust bases for opening a session:</p>
+                            <ul>
+                                <li><strong>Bilateral federation agreement</strong> &mdash; an explicit, mutually signed record that two tenant AIDs have agreed to federate. This is the known-counterparty path.</li>
+                                <li><strong>Open federation</strong> &mdash; two strangers with no prior agreement establish trust per-interaction through mutual ZKC compliance attestation.</li>
+                                <li><strong>Introduction tier</strong> &mdash; an experimental profile in which a credential-plus-proof handshake auto-negotiates a scoped, collateral-priced provisional agreement, which then grows with ZK-provable interaction history and can graduate to a standard agreement.</li>
+                            </ul>
+                            <p>None of the three is a portable reputation score, and a declined or failed attestation only ever causes the counterparty to decline the interaction &mdash; it never gates funds, notes, or credential validity.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="os-section">
+            <div class="os-wrap">
+                <div class="os-section__head">
+                    <h2 class="heading">How AFP Composes with ZKC, ZKA, and ZKM</h2>
+                </div>
+                <div class="os-section__body">
+                    <div class="os-faq body">
+                        <div class="os-faq__item">
+                            <h3 class="subheading">How does AFP relate to ZKA?</h3>
+                            <p>ZKA is AFP's settlement and coordination substrate. Cross-tenant work artifacts, value transfers, and multi-step workflow attestations are ZKA constructs &mdash; ZKA notes for payment and ZKA/Coord recursive proofs for verifiable multi-step work &mdash; that AFP carries inside a session envelope without redefining them. This specification targets ZKA v0.9.2-draft.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">How does AFP relate to ZKC?</h3>
+                            <p>ZKC is AFP's compliance substrate. Tenant-to-operator telemetry and tenant-to-tenant compliance claims are profile-aware ZKC proofs, wrapped in a ZKA compliance bundle. AFP decides which claims are proved, on what cadence, and how they bind to session, identity, and authoritative trust-flow purpose through <code>afp:zkc-presentation-context:v2</code>. Its SHA-256/JCS digest is reduced canonically to a nonzero BN254 scalar, and the verifier must return a subject AID from an issuer-authenticated claim or companion proof; generic KYC and jurisdiction proofs cannot establish that AID alone. AFP ships no production adapter for the companion mechanism, so deployments lacking one reject and must not call those credentialing flows operational. Verification fails closed and does not fall back to the historical v1 context. ZKC owns the proof circuits, the anonymous/scoped/linkable presentation profiles, and pseudonym and scope derivation. This specification targets ZKC v0.4.1-draft.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">How does AFP relate to ZKM?</h3>
+                            <p>ZKM is an optional, principal-issued spend-authorization layer that composes with AFP as a peer rather than a new protocol layer. An AFP tenant's agent may exercise a ZKM mandate inside an AFP session; AFP owns bilateral session policy and ZKM owns unilateral mandate state, and both constraints must pass independently &mdash; neither subsumes or replaces the other.</p>
+                            <p>AFP, ZKA, ZKC, and ZKM all share the same Key Derivation Core (AFP-KDC), a self-contained module specifying master-seed derivation, Poseidon2/BN254 domain tags, and per-entity sub-seed derivation that each protocol references rather than reimplements.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="os-section">
+            <div class="os-wrap">
+                <div class="os-section__head">
+                    <h2 class="heading">Status &amp; Governance</h2>
+                </div>
+                <div class="os-section__body">
+                    <div class="os-faq body">
+                        <div class="os-faq__item">
+                            <h3 class="subheading">What is AFP's current status?</h3>
+                            <p>AFP is a Draft Specification, currently at version 0.3.14-draft. Version 0.3.0 was a deliberate narrowing of the earlier v0.2.0 open-marketplace draft into the smaller, sharper protocol described on this site; the historical v0.2 draft is retained only as a superseded reference.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">Who maintains AFP?</h3>
+                            <p>AFP is developed by <a href="https://pyramidal.io">Pyramidal</a> as part of the Pyramidal ZK protocol family, alongside ZKA, ZKC, and ZKM. ADAMAS, published by Pyramidal Inc., is the reference implementation of the tenant conformance profile &mdash; a statement of fact about one implementation, not a conformance gate or a source of protocol privilege. Conformance is asserted and verified bilaterally between counterparties; AFP defines no conformance registry, certification mark, or published implementer list.</p>
+                        </div>
+                        <div class="os-faq__item">
+                            <h3 class="subheading">What license applies?</h3>
+                            <p>The AFP specification is released under the Apache License 2.0.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="os-footer">
+        <div class="os-wrap">
+            <ul class="os-footer__family">
+                <li>
+                    <a class="os-footer__proto" href="https://zka.dev" target="_blank" rel="noopener">
+                        <span class="os-mark os-mark--zka" aria-hidden="true"></span>
+                        <b>ZKA</b>
+                        <span class="small">Zero-Knowledge Agents</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="os-footer__proto" href="https://zkc.dev" target="_blank" rel="noopener">
+                        <span class="os-mark os-mark--zkc" aria-hidden="true"></span>
+                        <b>ZKC</b>
+                        <span class="small">Zero-Knowledge Compliance</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="os-footer__proto" href="https://zkm.dev" target="_blank" rel="noopener">
+                        <span class="os-mark os-mark--zkm" aria-hidden="true"></span>
+                        <b>ZKM</b>
+                        <span class="small">Zero-Knowledge Mandates</span>
+                    </a>
+                </li>
+                <li>
+                    <a class="os-footer__proto" href="../" aria-current="page">
+                        <span class="os-mark os-mark--afp" aria-hidden="true"></span>
+                        <b>AFP</b>
+                        <span class="small">Agent Federation Protocol</span>
+                    </a>
+                </li>
+            </ul>
+            <div class="os-footer__meta small">
+                <p>AFP is part of the <a href="https://pyramidal.io" target="_blank" rel="noopener">Pyramidal</a> ZK protocol family</p>
+                <ul class="os-footer__links">
+                    <li><a href="https://github.com/pyramidal-io/AFP" target="_blank" rel="noopener">GitHub</a></li>
+                    <li><a href="../spec/">Specification</a></li>
+                    <li><a href="../schema/">Schemas</a></li>
+                    <li><a href="../faq/">FAQ</a></li>
+                    <li><a href="../llms.txt">For AI Agents</a></li>
+                </ul>
+            </div>
+            <p class="os-footer__note small">Verifiable, metadata-private federation between tenants. Released under the <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache License 2.0</a>.</p>
+        </div>
+    </footer>
+
+    <script>document.addEventListener('click',function(e){var b=e.target.closest('.os-theme');if(!b)return;var h=document.documentElement,t=h.getAttribute('data-theme')==='dark'?'light':'dark';h.setAttribute('data-theme',t);try{localStorage.setItem('os-theme',t)}catch(x){}})</script>
+</body>
+</html>

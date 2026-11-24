@@ -1,0 +1,202 @@
+# Exact files that may form a future public AFP source snapshot.
+#
+# IN — and only when listed as one literal tracked regular-file path below:
+# reviewed canonical protocol/specification and reference material; protocol
+# vectors, parameters, and family locks/manifests; the
+# standard-library reference packages and their conformance support; public
+# validators; and reviewed static-site artifacts. An exact listing is an
+# approval of that file only, never of its directory or future neighbours.
+#
+# All published fixtures and examples are deterministic and synthetic. They
+# are not production-derived data and must not encode a credential, key,
+# identity, customer, tenant, account, session, telemetry, export, or routing
+# value.
+#
+# OUT — even if tracked: agent plans/design history, research, operations and
+# ceremony output, account/session/tenant material, deployment state, private
+# repository metadata and CI, overlays, runbooks, evidence, local caches, and
+# every uncertain or unreviewed file. The private-only control tests
+# test_ceremony_staging.py, test_kdc_supply_chain.py, and
+# test_protocol_family_release_evidence.py remain OUT: they assert private
+# ceremony execution, private KDC workflow, and rollout evidence. Their
+# required operational inputs must not be made public merely for tests.
+# Private release evidence, historical rollout worklists and ADRs, and the
+# cross-repository Rust harness also remain OUT. Public conformance uses the
+# self-contained Python reference and vendored Noir KATs.
+#
+# This policy is default-deny: entries are literal tracked regular files only.
+LICENSE
+NOTICE
+PUBLIC_ALLOWLIST
+conformance/noir/Nargo.toml
+conformance/noir/kdc_poseidon2/Nargo.toml
+conformance/noir/kdc_poseidon2/src/lib.nr
+conformance/noir/vendor/poseidon/LICENSE
+conformance/noir/vendor/poseidon/Nargo.toml
+conformance/noir/vendor/poseidon/UPSTREAM.json
+conformance/noir/vendor/poseidon/src/lib.nr
+conformance/noir/vendor/poseidon/src/poseidon2.nr
+docs/AFP_AGENT_IDENTITY_ADDENDUM.md
+docs/Agent_Federation_Protocol_AFP.md
+docs/afp_channel_v1_test_vectors.json
+docs/afp_concept_brief_v0_1.md
+docs/afp_coord_v2_cross_org_conformance_v1.json
+docs/afp_implementation_security_guide.md
+docs/afp_introduction_profile.md
+docs/afp_native_credential_carriage_v1.json
+docs/afp_opened_at_conformance_v1.json
+docs/afp_presentation_public_input_classification_v1.json
+docs/afp_routing_specification.md
+docs/afp_requirement_index.json
+docs/afp_session_stable_content_v1.json
+docs/afp_specification.md
+docs/afp_v0_3_scope_addendum.md
+docs/afp_v0_3_scope_note.md
+docs/kdc_specification.md
+docs/kdc_v1_0_0_test_vectors.json
+docs/kdc_v1_0_1_domain_registry.json
+docs/kdc_v1_0_2_conformance_vectors.json
+docs/kdc_v1_0_2_domain_registry.json
+docs/kdc_v1_0_2_poseidon2_parameterization.md
+docs/kdc_v1_0_2_poseidon2_parameters.json
+docs/kdc_v1_0_3_domain_registry.json
+docs/keri_afp_mapping.md
+docs/pay_interaction_context_kat_v1.json
+docs/payment_venue_profile_v2.md
+docs/payment_venue_v2_conformance.json
+docs/payment_venue_v2_dispatch_conformance_v1.json
+protocol-family/afp-interface-surface-v1.json
+protocol-family/golden-vectors-v1.json
+protocol-family/interface-manifest-v1.json
+protocol-family/interface-manifest-v1.schema.json
+protocol-family/poseidon2-operational-domains-v1.json
+protocol-family/snapshot-lock.json
+python/README.md
+python/afp_ceremony/__init__.py
+python/afp_ceremony/authority.py
+python/afp_ceremony/ceremony.py
+python/afp_ceremony/conformance.py
+python/afp_ceremony/errors.py
+python/afp_ceremony/jcs.py
+python/afp_ceremony/keystate.py
+python/afp_ceremony/staging.py
+python/afp_introduction/__init__.py
+python/afp_introduction/agreement.py
+python/afp_introduction/atoms.py
+python/afp_introduction/conformance.py
+python/afp_introduction/credentialing.py
+python/afp_introduction/directory.py
+python/afp_introduction/handshake.py
+python/afp_introduction/settlement.py
+python/afp_introduction/signing.py
+python/afp_mixnet/__init__.py
+python/afp_mixnet/conformance.py
+python/afp_mixnet/cover.py
+python/afp_mixnet/crypto.py
+python/afp_mixnet/directory.py
+python/afp_mixnet/integration.py
+python/afp_mixnet/mixnode.py
+python/afp_mixnet/network.py
+python/afp_mixnet/profiles.py
+python/afp_mixnet/sphinx.py
+python/afp_payment/__init__.py
+python/afp_payment/authentication.py
+python/afp_payment/conformance.py
+python/afp_payment/quote.py
+python/afp_payment/receipt.py
+python/afp_payment/replay.py
+python/afp_payment/venue.py
+python/afp_session/__init__.py
+python/afp_session/atoms.py
+python/afp_session/bundle.py
+python/afp_session/canonical.py
+python/afp_session/channel.py
+python/afp_session/commitment.py
+python/afp_session/conformance.py
+python/afp_session/coord.py
+python/afp_session/credential.py
+python/afp_session/dispute.py
+python/afp_session/ed25519.py
+python/afp_session/kdc.py
+python/afp_session/keri.py
+python/afp_session/namespace.py
+python/afp_session/poseidon2.py
+python/afp_session/presentation.py
+python/afp_session/presentation_conformance.py
+python/afp_session/profiles.py
+python/afp_session/session.py
+python/afp_session/transport.py
+schemas/afp-credential-envelope-v1.schema.json
+scripts/afp_requirement_ids.py
+scripts/check_afp_interface_surface.py
+scripts/validate_kdc_conformance.py
+scripts/validate_protocol_family.py
+scripts/validate_public_allowlist.py
+tests/python/_path.py
+tests/python/ceremony_fixtures.py
+tests/python/fixtures.py
+tests/python/mixnet_fixtures.py
+tests/python/payment_fixtures.py
+tests/python/test_acceptance.py
+tests/python/test_ceremony_authority.py
+tests/python/test_ceremony_keystate.py
+tests/python/test_channel.py
+tests/python/test_commitment.py
+tests/python/test_conformance_ob.py
+tests/python/test_coord_v2_integration.py
+tests/python/test_dispute.py
+tests/python/test_ed25519.py
+tests/python/test_implementation_security_guide.py
+tests/python/test_instance_attestation_spec.py
+tests/python/test_interaction_context_kat.py
+tests/python/test_interface_surface.py
+tests/python/test_introduction_agreement.py
+tests/python/test_introduction_agreement_signature.py
+tests/python/test_introduction_atoms.py
+tests/python/test_introduction_conformance.py
+tests/python/test_introduction_directory.py
+tests/python/test_introduction_handshake.py
+tests/python/test_introduction_settlement.py
+tests/python/test_kdc_domains.py
+tests/python/test_kdc_poseidon2_profile.py
+tests/python/test_kdc_validator_robustness.py
+tests/python/test_keri.py
+tests/python/test_mixnet_acceptance.py
+tests/python/test_mixnet_conformance.py
+tests/python/test_mixnet_cover.py
+tests/python/test_mixnet_directory.py
+tests/python/test_mixnet_sphinx.py
+tests/python/test_namespace.py
+tests/python/test_native_credential_spec.py
+tests/python/test_native_credentials.py
+tests/python/test_native_introduction.py
+tests/python/test_payment_authentication.py
+tests/python/test_payment_conformance.py
+tests/python/test_payment_quote.py
+tests/python/test_payment_receipt.py
+tests/python/test_payment_venue.py
+tests/python/test_payment_venue_authentication.py
+tests/python/test_payment_venue_receipt.py
+tests/python/test_presentation_binding_conformance.py
+tests/python/test_presentation_profiles.py
+tests/python/test_profiles.py
+tests/python/test_protocol_family.py
+tests/python/test_public_input_classification.py
+tests/python/test_requirement_identifiers.py
+tests/python/test_session_context.py
+tests/python/test_session_exchange.py
+tests/python/test_session_fsm.py
+tests/python/venue_fixtures.py
+website/afp-logo.png
+website/apple-touch-icon.png
+website/css/style.css
+website/faq/index.html
+website/favicon-16.png
+website/favicon-32.png
+website/favicon.ico
+website/index.html
+website/llms-full.txt
+website/llms.txt
+website/schema/index.html
+website/spec.md
+website/spec/index.html

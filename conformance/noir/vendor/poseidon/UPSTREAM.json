@@ -1,0 +1,14 @@
+{
+  "format": "afp-vendored-noir-source-v1",
+  "license": {
+    "file": "LICENSE",
+    "spdx": "Apache-2.0"
+  },
+  "source": {
+    "path": "src/poseidon2.nr",
+    "sha256": "727ab4c68338938edb3d300c1f7949395beda882f6b06456bc21e8917102b507",
+    "upstreamBlobSha1": "d152ab207cc056eb58d0fb9a7d1f754504621ea0"
+  },
+  "upstreamCommit": "f249446e6e01f7b607ad35351cebe0cc20068cb7",
+  "upstreamRepository": "https://github.com/noir-lang/poseidon"
+}

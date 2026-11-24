@@ -1,0 +1,96 @@
+{
+  "format": "afp-opened-at-conformance-v1",
+  "interface_version": "0.3.12-draft",
+  "encoding": {
+    "json_type": "number",
+    "canonical_json_token": "0, or a nonzero digit followed only by decimal digits",
+    "minimum": 0,
+    "maximum": 253402300799,
+    "maximum_is_less_than": "2^53",
+    "javascript_maximum_safe_integer": 9007199254740991,
+    "timestamp_format": "RFC3339 UTC whole-second YYYY-MM-DDTHH:MM:SSZ"
+  },
+  "session_inputs": {
+    "initiator_entity_aid": "E_i",
+    "responder_entity_aid": "E_r",
+    "session_id": "sess-1"
+  },
+  "accepted": [
+    {
+      "name": "min",
+      "opened_at": 0,
+      "canonical_json_token": "0",
+      "rfc3339_utc": "1970-01-01T00:00:00Z",
+      "session_context": "X_470c0179913b6f222382d33f22db1ba6afd0a15529592053d6f49b39fa6dc618",
+      "zka_bundle_context": "0x16a7b306b009cef86b328d88a159c349879cb90caf9fafc29312a5a60a6dc617"
+    },
+    {
+      "name": "published",
+      "opened_at": 1700000000,
+      "canonical_json_token": "1700000000",
+      "rfc3339_utc": "2023-11-14T22:13:20Z",
+      "session_context": "X_eddb6ad038bd9a1a79c6c1d29ebd7461da0383948b7e6c13dadd6553b97e4a7f",
+      "zka_bundle_context": "0x2c4a3104b3f719739885aaf898b812ed3933e272a498a9cecb558f03f97e4a7b"
+    },
+    {
+      "name": "max",
+      "opened_at": 253402300799,
+      "canonical_json_token": "253402300799",
+      "rfc3339_utc": "9999-12-31T23:59:59Z",
+      "session_context": "X_981138471688679a4d0314359580eee7d299980f1ef4dfc764207f7628180108",
+      "zka_bundle_context": "0x06e44cee72f3871d2412431210fce5d059fddf35b1c88e13987a9eba58180105"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "below_minimum",
+      "opened_at": -1,
+      "reason": "negative"
+    },
+    {
+      "name": "above_maximum",
+      "opened_at": 253402300800,
+      "reason": "out-of-range"
+    },
+    {
+      "name": "string",
+      "opened_at": "1700000000",
+      "reason": "wrong-json-type"
+    },
+    {
+      "name": "boolean",
+      "opened_at": true,
+      "reason": "wrong-json-type"
+    },
+    {
+      "name": "null",
+      "opened_at": null,
+      "reason": "wrong-json-type"
+    },
+    {
+      "name": "fractional",
+      "opened_at": 1700000000.5,
+      "reason": "fractional"
+    },
+    {
+      "name": "integral_fraction_token",
+      "raw_json_token": "1700000000.0",
+      "reason": "noncanonical"
+    },
+    {
+      "name": "exponent_token",
+      "raw_json_token": "1e0",
+      "reason": "noncanonical"
+    },
+    {
+      "name": "negative_zero_token",
+      "raw_json_token": "-0",
+      "reason": "noncanonical"
+    },
+    {
+      "name": "unsafe_js_integer",
+      "opened_at": 9007199254740992,
+      "reason": "out-of-range-and-outside-safe-integer-range"
+    }
+  ]
+}
